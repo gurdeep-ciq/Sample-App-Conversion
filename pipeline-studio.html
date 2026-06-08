@@ -495,6 +495,16 @@ function toISODate(v){
   m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if(m){ let y=m[3]; if(y.length===2)y="20"+y; return `${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; }
   return s;
 }
+function toTimeOfDay(v){
+  if(v==null||v==="") return "00:00:00";
+  const p=n=>String(n).padStart(2,"0");
+  // Excel time cells arrive as JS Dates on the 1899-12-31 epoch — take the wall-clock time.
+  if(v instanceof Date) return `${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`;
+  // Bare Excel serial fraction (fraction of a 24h day).
+  if(typeof v==="number"){ let s=Math.round((v-Math.floor(v))*86400); return `${p(Math.floor(s/3600))}:${p(Math.floor(s%3600/60))}:${p(s%60)}`; }
+  const m=String(v).trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  return m ? `${m[1].padStart(2,"0")}:${m[2]}:${m[3]||"00"}` : "00:00:00";
+}
 function executePipeline(workbook, spec){
   const enabled = spec.rules.filter(r=>r.enabled);
   const sheet = workbook.sheets.find(s=>s.name===spec.sheet) || workbook.sheets.find(s=>s.kind==="data");
@@ -506,16 +516,17 @@ function executePipeline(workbook, spec){
   const inputCount = rows.length;
   const dropped = [];
 
-  // transforms first (cast/combine/derive/drop_column), then filters, then dedupe
+  // transforms first (combine/cast/derive/drop_column), then filters, then dedupe.
+  // combine runs before casts so it reads the original Date/Time cells, not cast-mutated values.
+  enabled.filter(r=>r.kind==="combine_datetime").forEach(r=>{
+    const {dateCol,timeCol,target}=r.spec; rows.forEach(o=>{ const d=toISODate(o[dateCol]); const t=toTimeOfDay(o[timeCol]); o[target]= d? `${d}T${t}`:null; });
+  });
   enabled.filter(r=>r.kind==="cast").forEach(r=>{
     const {column,to}=r.spec; rows.forEach(o=>{ if(o[column]==null)return;
       if(to==="string") o[column]=typeof o[column]==="number"? (Number.isInteger(o[column])?o[column].toFixed(0):String(o[column])) : String(o[column]);
       else if(to==="currency") o[column]=toNumber(o[column]);
       else if(to==="date") o[column]=toISODate(o[column]);
     });
-  });
-  enabled.filter(r=>r.kind==="combine_datetime").forEach(r=>{
-    const {dateCol,timeCol,target}=r.spec; rows.forEach(o=>{ const d=toISODate(o[dateCol]); const t=o[timeCol]?String(o[timeCol]).trim():"00:00:00"; o[target]= d? `${d}T${t}`:null; });
   });
   enabled.filter(r=>r.kind==="derive").forEach(r=>{
     const {target,a,b}=r.spec; rows.forEach(o=>{ const av=toNumber(o[a]), bv=toNumber(o[b]); o[target]=(av!=null&&bv!=null)?+(av*bv).toFixed(4):null; });
