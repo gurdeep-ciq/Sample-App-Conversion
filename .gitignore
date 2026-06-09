@@ -6,6 +6,8 @@ backend/.venv/
 
 # Learned/runtime state (seeded from entities.py on first run)
 backend/registry.json
+# Materialized tables written by the Dagster IO manager
+backend/warehouse/
 
 # Editors / OS
 .DS_Store

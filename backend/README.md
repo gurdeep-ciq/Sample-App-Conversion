@@ -6,10 +6,19 @@ plus the **compact-dagster** in-process execution engine.
 
 ## What it does (the three goals)
 
-1. **Compact Dagster generates & runs the pipeline (not an LLM).**
-   Each target table is compiled into real Dagster assets and executed in-process
-   via `materialize()`. The run emits a `TableSchema` and an asset check; the API
-   returns the actual Dagster run events. See `dagster_pipeline.py`.
+1. **Compact Dagster runs the pipeline — full integration (not an LLM).**
+   Each table is compiled into a partitioned Dagster `Definitions` (source assets →
+   union table) and executed on **one process-lifetime `DagsterInstance`** shared
+   across requests, so run / materialization / asset-check history accumulates and is
+   queryable (`/runs`). A **file-backed IO manager resource** persists each cleaned
+   table to `warehouse/<table>/<partition>.json`; **each upload is a partition**, so
+   re-runs append rather than overwrite. Two registered **asset checks** run per table:
+   `schema_vs_registry` and `schema_drift_vs_prev_upload` (the latter compares against
+   prior uploads on disk — native cross-run "refine"). See `dagster_pipeline.py`.
+
+   Compact-dagster ships no SQL/SQLite or webserver (the fork stripped them), so the
+   instance uses its dependency-free dict-backed `lite_memory` storage; we deliberately
+   do **not** re-add those stacks.
 
 2. **Refine schema across formats for the same entities.**
    A canonical **entity registry** (`registry.json`, seeded from `entities.py`)
@@ -41,7 +50,9 @@ plus the **compact-dagster** in-process execution engine.
 | GET  | `/registry` | current canonical entities |
 | POST | `/registry/confirm` | persist confirmed `source -> entity` mappings |
 | POST | `/profile` | upload a file → all-sheet profiles, proposed schema/rules, entity-match suggestions, union groups, `fileId` |
-| POST | `/ingest` | run the Dagster pipeline(s) for chosen tables → cleaned rows, TableSchema, run events, schema-change verdict |
+| POST | `/ingest` | run the Dagster pipeline(s) for chosen tables → cleaned rows, TableSchema, run id + partition, asset-check results, schema-change + cross-run drift, warehouse path |
+| GET  | `/runs` | run history from the shared instance (run id, status, partition) |
+| GET  | `/runs/{id}` | materializations + asset-check evaluations for a run |
 
 ## Run it
 

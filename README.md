@@ -25,9 +25,14 @@ in-process by **compact-dagster**.
    all resolve to `customer`; `SKU` / `Code` → `product_code`; etc. Matches are suggested
    with confidence and confirmed in the UI; confirmations persist as learned aliases, so
    the schema **refines across formats** over time and data joins regardless of column titles.
-3. **Compiles & runs a Dagster pipeline.** Each table becomes Dagster assets
-   (`source(s) → conform → union → table`) executed via in-process `materialize()`, emitting
-   a `TableSchema` and a schema-change check against the registry.
+3. **Compiles & runs a Dagster pipeline (full compact-dagster integration).** Each table
+   becomes a **partitioned** Dagster `Definitions` (`source(s) → conform → union → table`)
+   run on **one process-lifetime `DagsterInstance`** shared across uploads — so run history
+   accumulates and is queryable. A file-backed **IO manager** persists each cleaned table to
+   `warehouse/<table>/<partition>.json` (one partition per upload), and registered **asset
+   checks** emit `TableSchema` and flag schema drift vs the registry and vs prior uploads.
+   (Compact-dagster ships no SQL/webserver — storage is its dict-backed `lite_memory`; we
+   don't re-add the stripped stacks.)
 4. **Exports** cleaned CSV/JSON, SQL DDL + JSON schema, the re-runnable pipeline spec, and a
    dropped-rows report.
 

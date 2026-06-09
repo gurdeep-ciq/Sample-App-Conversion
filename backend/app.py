@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 import entities as E
 import profiling as P
-from dagster_pipeline import run_table_pipeline
+from dagster_pipeline import run_detail, run_history, run_table_pipeline
 
 app = FastAPI(title="Pipeline Studio backend", version="1.0")
 app.add_middleware(
@@ -127,6 +127,8 @@ def ingest(body: IngestBody):
         raise HTTPException(status_code=404, detail="Unknown fileId — re-run /profile.")
     registry = E.load_registry()
     by_name = {s["name"]: s for s in wb["sheets"]}
+    # each upload is one Dagster partition
+    upload_id = P.snake(wb.get("fileName", "upload")) + "_" + body.fileId[:6]
 
     results = []
     for t in body.tables:
@@ -145,9 +147,19 @@ def ingest(body: IngestBody):
             })
         if not members:
             continue
-        results.append(run_table_pipeline(t.table, members, registry))
+        results.append(run_table_pipeline(t.table, members, registry, upload_id))
 
-    return {"tables": results}
+    return {"tables": results, "uploadId": upload_id}
+
+
+@app.get("/runs")
+def runs():
+    return {"runs": run_history()}
+
+
+@app.get("/runs/{run_id}")
+def run(run_id: str):
+    return run_detail(run_id)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,7 @@ const api = {
   async profile(file){ const fd=new FormData(); fd.append("file",file); const r=await fetch(state.backend.url+"/profile",{method:"POST",body:fd}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async ingest(plan){ const r=await fetch(state.backend.url+"/ingest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(plan)}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async confirm(confs){ const r=await fetch(state.backend.url+"/registry/confirm",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirmations:confs})}); return r.json(); },
+  async runs(){ const r=await fetch(state.backend.url+"/runs",{cache:"no-store"}); return r.json(); },
 };
 async function checkHealth(){
   try{ const h=await api.health(); state.backend.healthy=true; state.backend.dagster=h.dagster;
@@ -341,35 +342,54 @@ async function runIngest(){
     ruleOverrides:Object.fromEntries(g.members.map(mb=>[mb,(state.rulesBySheet[mb]||[])]))
   }));
   if(!tables.length){ alert("No tables enabled."); state.step=1; render(); return; }
-  try{ state.ingest=await api.ingest({fileId:state.fileId,tables}); state.step=4; render(); }
+  try{ state.ingest=await api.ingest({fileId:state.fileId,tables}); try{ state.runs=(await api.runs()).runs; }catch{} state.step=4; render(); }
   catch(e){ alert("Ingest failed: "+e.message); state.step=3; render(); }
 }
 function rRun(m){
   const res=state.ingest;
   m.appendChild(el("h1",{class:"page-title"},"Dagster run results"));
-  m.appendChild(el("p",{class:"page-sub"},"Each table was compiled to Dagster assets and materialized in-process. Nothing persisted until you export."));
+  m.appendChild(el("p",{class:"page-sub"},"Each table compiled to a partitioned Dagster job and materialized on a shared, persistent instance. Cleaned tables are written to the warehouse; runs accumulate in the run history below."));
   if(!res){ m.appendChild(el("div",{class:"empty-hint"},"No run yet.")); return; }
   res.tables.forEach(t=>{
+    const dr=t.dagsterRun||{};
     const pane=el("div",{class:"pane"});
-    pane.appendChild(el("div",{style:"display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap"},[
+    pane.appendChild(el("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"},[
       el("span",{class:"pane-title",style:"margin:0"},`Table: ${t.table}`),
-      el("span",{class:"badge "+(t.dagsterRun.success?"ok":"bad")}, t.dagsterRun.success?"materialize ✓":"failed"),
+      el("span",{class:"badge "+(dr.success?"ok":"bad")}, dr.success?"materialize ✓":"failed"),
       el("span",{class:"badge info"},`${t.rowCount} rows`),
-      el("span",{class:"badge muted"},`${t.schema.columns.length} cols`)
+      el("span",{class:"badge muted"},`${t.schema.columns.length} cols`),
+      dr.runId?el("span",{class:"badge muted",title:"Dagster run id"},`run ${String(dr.runId).slice(0,8)}`):null,
+      dr.partition?el("span",{class:"badge purple",title:"Dagster partition (this upload)"},`partition: ${dr.partition}`):null
     ]));
-    t.dagsterRun.assets.forEach(a=>{
+    dr.assets&&dr.assets.forEach(a=>{
       const md=a.metadata||{}; const bits=[];
       if(md.row_count!=null)bits.push(`rows: ${md.row_count}`);
       if(md.rows_kept!=null)bits.push(`kept ${md.rows_kept}/${md.rows_in}`);
       if(md["dagster/column_schema"])bits.push(`schema: ${md["dagster/column_schema"].columns.length} cols`);
+      if(md.warehouse_path)bits.push(`→ ${md.warehouse_path}`);
       pane.appendChild(el("div",{class:"asset-card"},[el("span",{class:"badge ok"},"●"),el("span",{class:"k"},a.asset),el("span",{style:"color:var(--muted)"},bits.join(" · "))]));
     });
+    // asset checks
+    if(dr.checks&&dr.checks.length){
+      const cw=el("div",{style:"margin:8px 0"});
+      dr.checks.forEach(c=>cw.appendChild(el("span",{class:"badge "+(c.passed?"ok":"bad"),style:"margin-right:5px"},`check: ${c.name} ${c.passed?"✓":"✕"}`)));
+      pane.appendChild(cw);
+    }
+    // schema vs registry
     const sc=t.schemaChange||{};
     const scWrap=el("div",{style:"margin:10px 0"});
     scWrap.appendChild(el("div",{class:"pane-title"},`Schema vs registry — ${sc.verdict||""}`));
     (sc.known||[]).forEach(k=>scWrap.appendChild(el("span",{class:"chip",style:"border-color:#86efac;background:var(--ok-soft);color:var(--ok)"},k)));
     (sc.new||[]).forEach(k=>scWrap.appendChild(el("span",{class:"chip",style:"border-color:#c4b5fd;background:var(--purple-soft);color:var(--purple)"},k+" (new)")));
     pane.appendChild(scWrap);
+    // cross-run drift vs previous upload
+    const cr=t.crossRun||{};
+    const crCls=(cr.drift||"").startsWith("breaking")?"bad":cr.drift==="new columns added"?"warn":"muted";
+    const crWrap=el("div",{style:"margin:6px 0"},[el("span",{class:"badge "+crCls},`cross-run: ${cr.drift||"—"}`)]);
+    (cr.added||[]).forEach(k=>crWrap.appendChild(el("span",{class:"chip",style:"border-color:#fcd34d;background:var(--warn-soft);color:var(--warn)"},"+"+k)));
+    (cr.removed||[]).forEach(k=>crWrap.appendChild(el("span",{class:"chip",style:"border-color:#fca5a5;background:var(--bad-soft);color:var(--bad)"},"−"+k)));
+    pane.appendChild(crWrap);
+    if(dr.warehousePath) pane.appendChild(el("div",{style:"font-size:11px;color:var(--muted);font-family:monospace;margin:4px 0 2px"},`persisted → ${dr.warehousePath}`));
     pane.appendChild(el("div",{class:"pane-title"},"Cleaned output (first 6 rows)"));
     pane.appendChild(tablePreview(t.rows.slice(0,6), t.schema.columns.map(c=>c.name)));
     t.members.forEach(mb=>{
@@ -382,6 +402,17 @@ function rRun(m){
     });
     m.appendChild(pane);
   });
+  // persisted Dagster run history (shared instance)
+  const runs=state.runs||[];
+  if(runs.length){
+    const hp=el("div",{class:"pane"});
+    hp.appendChild(el("div",{class:"pane-title"},`Dagster run history · ${runs.length} run(s) on the shared instance (this session)`));
+    const tt=el("table",{class:"data"});
+    tt.appendChild(el("thead",{html:"<tr><th>Run</th><th>Status</th><th>Partition (upload)</th><th>Job</th></tr>"}));
+    const tb=el("tbody");
+    runs.forEach(r=>tb.appendChild(el("tr",{html:`<td><code>${esc(String(r.runId).slice(0,8))}</code></td><td><span class="badge ${r.status==='SUCCESS'?'ok':'muted'}">${esc(r.status)}</span></td><td>${esc(r.partition||'—')}</td><td><code>${esc(r.job||'')}</code></td>`})));
+    tt.appendChild(tb); hp.appendChild(el("div",{class:"scroll-x"},tt)); m.appendChild(hp);
+  }
   m.appendChild(el("div",{class:"row-between"},[
     el("button",{class:"btn ghost",onclick:()=>{state.step=3;render();}},"← Back to rules"),
     el("button",{class:"btn success lg",onclick:()=>{state.step=5;render();}},"Export →")
