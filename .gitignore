@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+
+# Learned/runtime state (seeded from entities.py on first run)
+backend/registry.json
+
+# Editors / OS
+.DS_Store
+.claude/

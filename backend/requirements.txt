@@ -1,0 +1,13 @@
+# Pipeline Studio backend dependencies.
+#
+# NOTE: `dagster` is intentionally NOT listed here. The backend uses the
+# **compact-dagster** checkout as its execution engine (in-process materialize()).
+# Run the backend in an environment where compact-dagster's `dagster` is importable
+# — the easiest path is to reuse compact-dagster's own .venv (see run-backend.ps1),
+# or `uv pip install -e <compact-dagster>/python_modules/dagster` into a fresh venv.
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+openpyxl>=3.1
+rapidfuzz>=3.0

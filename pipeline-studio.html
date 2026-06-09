@@ -3,161 +3,99 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pipeline Studio — Generic File-to-Schema Ingest</title>
-<!-- SheetJS for xlsx/xls/csv parsing. CSV also has a built-in fallback parser. -->
+<title>Pipeline Studio — Dagster-backed file ingest</title>
+<!-- SheetJS only used for the offline fallback preview when the backend is down. -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
-  :root {
-    --ink: #0f172a; --ink-soft: #334155; --muted: #64748b;
-    --line: #e2e8f0; --line-strong: #cbd5e1;
-    --bg: #ffffff; --bg-alt: #f8fafc; --bg-tinted: #f1f5f9;
-    --accent: #1e40af; --accent-mid: #3b82f6; --accent-soft: #dbeafe; --accent-ink: #1e3a8a;
-    --ok: #166534; --ok-soft: #dcfce7;
-    --warn: #92400e; --warn-soft: #fef3c7;
-    --bad: #991b1b; --bad-soft: #fee2e2;
-    --purple-soft: #ede9fe; --purple: #6d28d9;
+  :root{
+    --ink:#0f172a;--ink-soft:#334155;--muted:#64748b;--line:#e2e8f0;--line-strong:#cbd5e1;
+    --bg:#fff;--bg-alt:#f8fafc;--bg-tinted:#f1f5f9;--accent:#1e40af;--accent-mid:#3b82f6;
+    --accent-soft:#dbeafe;--accent-ink:#1e3a8a;--ok:#166534;--ok-soft:#dcfce7;--warn:#92400e;
+    --warn-soft:#fef3c7;--bad:#991b1b;--bad-soft:#fee2e2;--purple:#6d28d9;--purple-soft:#ede9fe;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
-    background: var(--bg-alt); color: var(--ink); line-height: 1.55; font-size: 14px;
-  }
-  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
-
-  /* App shell */
-  .app { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
-  .topbar {
-    grid-column: 1 / -1; display: flex; align-items: center; gap: 16px;
-    padding: 0 20px; border-bottom: 1px solid var(--line); background: white;
-  }
-  .logo { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; }
-  .logo svg { width: 20px; height: 20px; }
-  .breadcrumb { flex: 1; font-size: 13px; color: var(--muted); }
-  .breadcrumb .current { color: var(--ink); font-weight: 500; }
-  .top-actions { display: flex; align-items: center; gap: 10px; }
-
-  .sidebar { border-right: 1px solid var(--line); background: var(--bg-alt); padding: 14px 12px; overflow-y: auto; }
-  .side-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 14px 8px 6px; font-weight: 600; }
-  .side-label:first-child { margin-top: 2px; }
-  .side-nav { list-style: none; padding: 0; margin: 0; }
-  .side-nav li { margin: 2px 0; }
-  .side-nav button {
-    width: 100%; text-align: left; display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--ink-soft);
-    background: none; border: none; cursor: pointer; font-family: inherit;
-  }
-  .side-nav button:hover { background: rgba(0,0,0,0.04); }
-  .side-nav button.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
-  .side-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .side-nav .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex-shrink: 0; }
-  .side-nav .dot.done { background: var(--ok); }
-  .side-nav .dot.active { background: var(--accent); }
-
-  .main { padding: 24px 32px 64px; overflow-y: auto; background: var(--bg); }
-  .page-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .page-sub { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
-
-  /* Wizard */
-  .wizard { display: flex; align-items: center; flex-wrap: wrap; background: var(--bg-alt); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 22px; font-size: 12px; gap: 2px; }
-  .w-step { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); padding: 0 8px; cursor: pointer; }
-  .w-step .num { display: inline-flex; width: 22px; height: 22px; background: white; border: 1px solid var(--line-strong); border-radius: 50%; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; }
-  .w-step.done { color: var(--ok); } .w-step.done .num { background: var(--ok); color: white; border-color: var(--ok); }
-  .w-step.active { color: var(--accent); font-weight: 600; } .w-step.active .num { background: var(--accent); color: white; border-color: var(--accent); }
-  .w-sep { color: var(--line-strong); margin: 0 2px; }
-
-  /* Buttons */
-  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; text-decoration: none; line-height: 1.1; font-family: inherit; }
-  .btn.primary { background: var(--accent); color: white; } .btn.primary:hover { background: var(--accent-ink); }
-  .btn.secondary { background: white; color: var(--ink); border-color: var(--line-strong); } .btn.secondary:hover { background: var(--bg-alt); }
-  .btn.ghost { background: transparent; color: var(--ink-soft); }
-  .btn.success { background: var(--ok); color: white; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.lg { padding: 11px 20px; font-size: 14px; }
-  .row-between { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; gap: 12px; }
-
-  /* Drop zone */
-  .drop-zone { border: 2px dashed var(--line-strong); border-radius: 12px; padding: 56px 40px; text-align: center; background: var(--bg-alt); cursor: pointer; transition: all .12s; }
-  .drop-zone:hover, .drop-zone.hover { background: var(--accent-soft); border-color: var(--accent-mid); }
-  .drop-zone .icon { width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
-  .drop-zone .icon svg { width: 28px; height: 28px; }
-  .drop-zone h3 { margin: 0 0 8px; font-size: 18px; }
-  .drop-zone p { margin: 0; color: var(--muted); font-size: 13px; }
-  .formats { margin-top: 16px; display: inline-flex; gap: 6px; flex-wrap: wrap; }
-  .fmt { padding: 3px 9px; background: white; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; color: var(--ink-soft); }
-
-  /* Cards / panes */
-  .pane { background: var(--bg-alt); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-  .pane-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
-  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 1100px){ .split-2 { grid-template-columns: 1fr; } }
-
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 20px; }
-  .stat-card { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-  .stat-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
-  .stat-card .value { font-size: 22px; font-weight: 700; line-height: 1.1; }
-  .stat-card .delta { font-size: 12px; color: var(--muted); margin-top: 3px; }
-
-  /* Tables */
-  table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
-  table.data th { text-align: left; background: var(--bg-tinted); padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: var(--muted); white-space: nowrap; }
-  table.data td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  table.data tbody tr:hover { background: var(--bg-alt); }
-  .scroll-x { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: white; }
-  .file-preview { background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .file-preview .fname { padding: 8px 12px; background: var(--bg-tinted); border-bottom: 1px solid var(--line); font-size: 11px; color: var(--ink-soft); }
-  .file-preview table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  .file-preview th { background: white; padding: 6px 9px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 600; white-space: nowrap; }
-  .file-preview td { padding: 5px 9px; border-bottom: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-  .file-preview tr.drop td { background: var(--bad-soft); text-decoration: line-through; color: var(--muted); }
-  .file-preview tr.header-row td { background: var(--accent-soft); font-weight: 600; color: var(--accent-ink); }
-
-  /* Badges */
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; line-height: 1.4; }
-  .badge.ok { background: var(--ok-soft); color: var(--ok); }
-  .badge.warn { background: var(--warn-soft); color: var(--warn); }
-  .badge.bad { background: var(--bad-soft); color: var(--bad); }
-  .badge.info { background: var(--accent-soft); color: var(--accent-ink); }
-  .badge.purple { background: var(--purple-soft); color: var(--purple); }
-  .badge.muted { background: var(--bg-tinted); color: var(--muted); }
-
-  /* Rule cards */
-  .rule { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 8px 0; display: flex; gap: 12px; align-items: flex-start; }
-  .rule.off { opacity: 0.55; }
-  .toggle { width: 38px; height: 22px; background: var(--accent); border-radius: 12px; position: relative; flex-shrink: 0; margin-top: 2px; cursor: pointer; border: none; }
-  .toggle::after { content: ""; position: absolute; width: 16px; height: 16px; background: white; border-radius: 50%; top: 3px; right: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: all .12s; }
-  .toggle.off { background: var(--line-strong); } .toggle.off::after { right: auto; left: 3px; }
-  .rule .body { flex: 1; }
-  .rule .rt { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-  .rule .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-  .rule .spec { background: var(--bg-tinted); border: 1px solid var(--line); border-radius: 5px; padding: 7px 10px; font-size: 11px; color: var(--ink-soft); font-family: "SF Mono", Menlo, monospace; }
-  .rule .impact { font-size: 12px; color: var(--muted); margin-top: 6px; }
-  .rule .impact b { color: var(--bad); }
-  .rule .impact b.ok { color: var(--ok); }
-
-  /* Schema mapping table */
-  .map-row { display: grid; grid-template-columns: 1fr 28px 1.4fr 110px 90px; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
-  .map-row.head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line-strong); }
-  .map-src { font-family: "SF Mono", Menlo, monospace; font-size: 12px; background: var(--bg-tinted); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .map-arrow { text-align: center; color: var(--accent-mid); }
-  .map-row input.tgt { width: 100%; font-family: "SF Mono", Menlo, monospace; font-size: 12px; border: 1px solid var(--line-strong); border-radius: 5px; padding: 5px 8px; }
-  .map-row select { width: 100%; font-size: 12px; border: 1px solid var(--line-strong); border-radius: 5px; padding: 5px 6px; background: white; font-family: inherit; }
-  .map-row.ignored .map-src, .map-row.ignored input.tgt { opacity: 0.45; }
-
-  .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
-  .alert.info { background: var(--accent-soft); border: 1px solid #93c5fd; color: var(--accent-ink); }
-  .alert.warn { background: var(--warn-soft); border: 1px solid #fcd34d; color: var(--warn); }
-  .alert.ok { background: var(--ok-soft); border: 1px solid #86efac; color: var(--ok); }
-  .alert svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
-
-  .code-block { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; font-family: "SF Mono", Menlo, monospace; font-size: 11px; line-height: 1.6; overflow-x: auto; white-space: pre; }
-  .pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:12px; font-size:11px; background:var(--bg-tinted); color:var(--ink-soft); border:1px solid var(--line); }
-  .empty-hint { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 14px; }
-  input.text-in { padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 13px; font-family: inherit; }
-  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .chip { padding: 4px 10px; background: white; border: 1px solid var(--line-strong); border-radius: 14px; font-size: 12px; cursor: pointer; }
-  .chip:hover { background: var(--accent-soft); border-color: var(--accent-mid); }
-  .hidden { display: none !important; }
+  *{box-sizing:border-box}html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;background:var(--bg-alt);color:var(--ink);line-height:1.55;font-size:14px}
+  code,.mono{font-family:"SF Mono",Menlo,Consolas,monospace}
+  .app{display:grid;grid-template-columns:228px 1fr;grid-template-rows:56px 1fr;height:100vh}
+  .topbar{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}
+  .logo{font-size:15px;font-weight:700;letter-spacing:-.02em;color:var(--accent);display:inline-flex;align-items:center;gap:8px}
+  .logo svg{width:20px;height:20px}
+  .crumb{flex:1;font-size:13px;color:var(--muted)}
+  .status-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:14px;border:1px solid var(--line);cursor:pointer}
+  .status-pill .dot{width:8px;height:8px;border-radius:50%}
+  .status-pill.up{background:var(--ok-soft);color:var(--ok);border-color:#86efac}.status-pill.up .dot{background:var(--ok)}
+  .status-pill.down{background:var(--bad-soft);color:var(--bad);border-color:#fca5a5}.status-pill.down .dot{background:var(--bad)}
+  .sidebar{border-right:1px solid var(--line);background:var(--bg-alt);padding:14px 12px;overflow-y:auto}
+  .side-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 8px 6px;font-weight:600}.side-label:first-child{margin-top:2px}
+  .side-nav{list-style:none;padding:0;margin:0}.side-nav li{margin:2px 0}
+  .side-nav button{width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;font-size:13px;color:var(--ink-soft);background:none;border:none;cursor:pointer;font-family:inherit}
+  .side-nav button:hover{background:rgba(0,0,0,.04)}.side-nav button.active{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+  .side-nav button:disabled{opacity:.4;cursor:not-allowed}
+  .side-nav .dot{width:8px;height:8px;border-radius:50%;background:var(--line-strong);flex-shrink:0}.side-nav .dot.done{background:var(--ok)}.side-nav .dot.active{background:var(--accent)}
+  .main{padding:24px 30px 64px;overflow-y:auto;background:var(--bg)}
+  .page-title{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .page-sub{font-size:13px;color:var(--muted);margin:0 0 20px}
+  .wizard{display:flex;align-items:center;flex-wrap:wrap;background:var(--bg-alt);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-bottom:22px;font-size:12px;gap:2px}
+  .w-step{display:inline-flex;align-items:center;gap:6px;color:var(--muted);padding:0 8px;cursor:pointer}
+  .w-step .num{display:inline-flex;width:22px;height:22px;background:#fff;border:1px solid var(--line-strong);border-radius:50%;align-items:center;justify-content:center;font-weight:700;font-size:11px}
+  .w-step.done{color:var(--ok)}.w-step.done .num{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .w-step.active{color:var(--accent);font-weight:600}.w-step.active .num{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .w-sep{color:var(--line-strong);margin:0 2px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;text-decoration:none;line-height:1.1;font-family:inherit}
+  .btn.primary{background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-ink)}
+  .btn.secondary{background:#fff;color:var(--ink);border-color:var(--line-strong)}.btn.secondary:hover{background:var(--bg-alt)}
+  .btn.ghost{background:transparent;color:var(--ink-soft)}.btn.success{background:var(--ok);color:#fff}
+  .btn:disabled{opacity:.5;cursor:not-allowed}.btn.lg{padding:11px 20px;font-size:14px}
+  .row-between{display:flex;justify-content:space-between;align-items:center;margin-top:24px;gap:12px}
+  .drop-zone{border:2px dashed var(--line-strong);border-radius:12px;padding:56px 40px;text-align:center;background:var(--bg-alt);cursor:pointer;transition:all .12s}
+  .drop-zone:hover,.drop-zone.hover{background:var(--accent-soft);border-color:var(--accent-mid)}
+  .drop-zone .icon{width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;margin:0 auto 14px}
+  .drop-zone .icon svg{width:28px;height:28px}.drop-zone h3{margin:0 0 8px;font-size:18px}.drop-zone p{margin:0;color:var(--muted);font-size:13px}
+  .formats{margin-top:16px;display:inline-flex;gap:6px;flex-wrap:wrap}.fmt{padding:3px 9px;background:#fff;border:1px solid var(--line);border-radius:4px;font-size:11px;color:var(--ink-soft)}
+  .pane{background:var(--bg-alt);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+  .pane-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+  .stat-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .stat-card .label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;margin-bottom:4px}
+  .stat-card .value{font-size:22px;font-weight:700;line-height:1.1}
+  table.data{width:100%;border-collapse:collapse;font-size:12px}
+  table.data th{text-align:left;background:var(--bg-tinted);padding:8px 12px;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:var(--muted);white-space:nowrap}
+  table.data td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.data tbody tr:hover{background:var(--bg-alt)}
+  .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;line-height:1.4}
+  .badge.ok{background:var(--ok-soft);color:var(--ok)}.badge.warn{background:var(--warn-soft);color:var(--warn)}
+  .badge.bad{background:var(--bad-soft);color:var(--bad)}.badge.info{background:var(--accent-soft);color:var(--accent-ink)}
+  .badge.purple{background:var(--purple-soft);color:var(--purple)}.badge.muted{background:var(--bg-tinted);color:var(--muted)}
+  .alert{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:13px}
+  .alert.info{background:var(--accent-soft);border:1px solid #93c5fd;color:var(--accent-ink)}
+  .alert.warn{background:var(--warn-soft);border:1px solid #fcd34d;color:var(--warn)}
+  .alert.ok{background:var(--ok-soft);border:1px solid #86efac;color:var(--ok)}
+  .alert.bad{background:var(--bad-soft);border:1px solid #fca5a5;color:var(--bad)}
+  .sheet-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:8px 0;display:flex;gap:12px;align-items:flex-start}
+  .sheet-card.meta{opacity:.7}
+  .sheet-card .body{flex:1}.sheet-card .h{font-size:14px;font-weight:600;margin-bottom:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .sheet-card .sub{font-size:12px;color:var(--muted)}
+  .group-card{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;margin:8px 0}
+  .group-card.union{border-left-color:var(--purple)}
+  .chip{display:inline-block;padding:3px 9px;background:var(--bg-tinted);border:1px solid var(--line);border-radius:12px;font-size:11px;margin:2px 3px 2px 0}
+  .map-row{display:grid;grid-template-columns:1.1fr 26px 1.2fr 110px 70px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+  .map-row.head{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line-strong)}
+  .map-src{font-family:"SF Mono",Menlo,monospace;font-size:12px;background:var(--bg-tinted);border:1px solid var(--line);border-radius:5px;padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .map-arrow{text-align:center;color:var(--accent-mid)}
+  .map-row select{width:100%;font-size:12px;border:1px solid var(--line-strong);border-radius:5px;padding:5px 6px;background:#fff;font-family:inherit}
+  .rule{background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:7px 0;display:flex;gap:12px;align-items:flex-start}.rule.off{opacity:.55}
+  .toggle{width:38px;height:22px;background:var(--accent);border-radius:12px;position:relative;flex-shrink:0;margin-top:2px;cursor:pointer;border:none}
+  .toggle::after{content:"";position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:3px;right:3px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toggle.off{background:var(--line-strong)}.toggle.off::after{right:auto;left:3px}
+  .rule .rt{font-size:13px;font-weight:600;margin-bottom:3px}.rule .why{font-size:12px;color:var(--muted)}
+  .rule .spec{background:var(--bg-tinted);border:1px solid var(--line);border-radius:5px;padding:6px 9px;font-size:11px;color:var(--ink-soft);font-family:"SF Mono",Menlo,monospace;margin-top:4px;word-break:break-all}
+  .asset-card{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 12px;margin:6px 0;font-size:12px}
+  .asset-card .k{font-family:"SF Mono",Menlo,monospace;font-weight:600}
+  .code-block{background:#0f172a;color:#e2e8f0;padding:13px 15px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;line-height:1.6;overflow-x:auto;white-space:pre}
+  .empty-hint{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+  input.text-in{padding:7px 10px;border:1px solid var(--line-strong);border-radius:6px;font-size:13px;font-family:inherit}
+  .hidden{display:none!important}
 </style>
 </head>
 <body>
@@ -167,786 +105,362 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
       Pipeline Studio
     </div>
-    <div class="breadcrumb"><span class="current" id="crumb">New ingestion</span></div>
-    <div class="top-actions">
-      <input id="dataset-name" class="text-in" style="width:200px;" placeholder="Dataset name (e.g. sales_orders)" />
-      <button class="btn secondary" id="reset-btn">Reset</button>
+    <div class="crumb" id="crumb">New ingestion</div>
+    <div class="status-pill down" id="status" title="Click to set backend URL">
+      <span class="dot"></span><span id="status-text">backend: checking…</span>
     </div>
+    <button class="btn secondary" id="reset-btn">Reset</button>
   </div>
-
   <div class="sidebar">
-    <div class="side-label">Onboarding wizard</div>
+    <div class="side-label">Wizard</div>
     <ul class="side-nav" id="nav"></ul>
-    <div class="side-label">Schema library</div>
-    <ul class="side-nav" id="library"><li><span class="empty-hint" style="padding:8px;font-size:12px;">No saved schemas yet</span></li></ul>
+    <div class="side-label">Engine</div>
+    <div style="font-size:12px;color:var(--muted);padding:4px 10px;line-height:1.5" id="engine-info">—</div>
   </div>
-
   <div class="main" id="main"></div>
 </div>
 
 <script>
 /* ============================================================
-   Pipeline Studio — generic, offline file→schema→ingest engine.
-   No network/AI calls: a deterministic profiler proposes a schema
-   and an executable pipeline spec; a shared executor runs it.
+   Pipeline Studio frontend — backend-first (compact-dagster),
+   with an offline preview fallback when the backend is down.
    ============================================================ */
-
-const STEPS = ["Upload","Profile","Schema","Rules","Dry-run","Publish"];
-const LS_KEY = "pipeline_studio_schemas_v1";
+const STEPS = ["Upload","Sheets","Entities","Rules","Run","Export"];
+const LS_URL = "ps_backend_url";
+const DEFAULT_URL = "http://127.0.0.1:8000";
 
 const state = {
-  step: 0,
-  fileName: null,
-  workbook: null,        // { sheets: [{name, aoa, kind, headerRow, ...}] }
-  profile: null,         // chosen-sheet profile
-  spec: null,            // { sheet, headerRow, schema, rules[] }
-  result: null,          // executed pipeline result
-  datasetName: "",
-  refineBase: null,      // existing schema being refined
+  step:0,
+  backend:{url: localStorage.getItem(LS_URL)||DEFAULT_URL, healthy:false, dagster:null},
+  fileName:null, fileId:null, sheets:[], unionGroups:[], registry:[],
+  overrides:{}, rulesBySheet:{}, groupsEnabled:{}, ingest:null, offline:null,
 };
 
-/* ---------- small utils ---------- */
-const $ = s => document.querySelector(s);
-const el = (t, a={}, kids=[]) => { const n=document.createElement(t); for(const k in a){ if(k==="class")n.className=a[k]; else if(k==="html")n.innerHTML=a[k]; else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]); else n.setAttribute(k,a[k]); } (Array.isArray(kids)?kids:[kids]).forEach(c=>{ if(c==null)return; n.appendChild(typeof c==="string"?document.createTextNode(c):c); }); return n; };
-const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const snake = s => String(s||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^(\d)/,"col_$1") || "column";
-function dl(filename, text, mime="text/plain"){ const b=new Blob([text],{type:mime}); const u=URL.createObjectURL(b); const a=el("a",{href:u,download:filename}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u); }
+const $=s=>document.querySelector(s);
+const el=(t,a={},kids=[])=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k]);}(Array.isArray(kids)?kids:[kids]).forEach(c=>{if(c==null)return;n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;};
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function dl(name,text,mime="text/plain"){const b=new Blob([text],{type:mime});const u=URL.createObjectURL(b);const a=el("a",{href:u,download:name});document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
 
-/* ============================================================
-   FILE PARSING
-   ============================================================ */
-async function parseFile(file){
-  const name = file.name.toLowerCase();
-  if(name.endsWith(".csv") || name.endsWith(".tsv") || name.endsWith(".txt")){
-    const text = await file.text();
-    if(typeof XLSX !== "undefined"){
-      const wb = XLSX.read(text, {type:"string"});
-      return readWorkbook(wb);
-    }
-    return { sheets: [classifySheet("Sheet1", parseDelimited(text))] };
-  }
-  // xlsx / xls
-  if(typeof XLSX === "undefined") throw new Error("Spreadsheet parser (SheetJS) failed to load. Check your network, then reload — or upload a CSV instead.");
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, {type:"array", cellDates:true});
-  return readWorkbook(wb);
-}
-function readWorkbook(wb){
-  const sheets = wb.SheetNames.map(nm=>{
-    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nm], {header:1, raw:true, defval:null, blankrows:false});
-    return classifySheet(nm, aoa);
-  });
-  return { sheets };
-}
-function parseDelimited(text){
-  const delim = (text.split("\n")[0].split("\t").length > text.split("\n")[0].split(",").length) ? "\t" : ",";
-  // minimal quoted-CSV parser
-  const rows=[]; let row=[], cur="", q=false;
-  for(let i=0;i<text.length;i++){ const c=text[i];
-    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
-    else { if(c==='"')q=true; else if(c===delim){row.push(cur);cur="";} else if(c==="\n"){row.push(cur);rows.push(row);row=[];cur="";} else if(c!=="\r")cur+=c; }
-  }
-  if(cur.length||row.length){row.push(cur);rows.push(row);}
-  return rows.map(r=>r.map(v=>{ const n=Number(v); return (v!=="" && !isNaN(n) && /^-?[\d.eE+]+$/.test(v)) ? n : (v===""?null:v); }));
-}
-
-/* ============================================================
-   SHEET CLASSIFICATION + HEADER DETECTION
-   ============================================================ */
-function classifySheet(name, aoa){
-  aoa = (aoa||[]).map(r=>r||[]);
-  const nonEmptyRows = aoa.filter(r=>r.some(c=>c!=null && c!==""));
-  const maxCols = Math.max(0,...aoa.map(r=>r.length));
-  const headerRow = detectHeaderRow(aoa);
-  const widthAtHeader = (aoa[headerRow]||[]).filter(c=>c!=null && c!=="").length;
-  const dataRows = aoa.length - headerRow - 1;
-
-  // metadata = narrow key/value sheet or tiny sheet, or name strongly signals config
-  const metaName = /^(filters?|extra ?info|.*info|cover|notes?|readme|summary|legend|parameters?|settings?)$/i.test(name.trim());
-  const looksKeyValue = widthAtHeader <= 2 && nonEmptyRows.length >= 2;
-  const tooSmall = widthAtHeader < 3 || dataRows < 1;
-  const kind = (looksKeyValue || (metaName && widthAtHeader < 4) || tooSmall) ? "metadata" : "data";
-
-  return { name, aoa, kind, headerRow, widthAtHeader, dataRows: Math.max(0,dataRows), maxCols };
-}
-function detectHeaderRow(aoa){
-  const scan = Math.min(aoa.length, 25);
-  let best = {row:0, score:-Infinity};
-  for(let r=0;r<scan;r++){
-    const row = aoa[r]||[];
-    const nonEmpty = row.filter(c=>c!=null && c!=="");
-    if(nonEmpty.length < 2) continue;
-    // header cells: short, stringy, not pure numbers
-    const strCells = nonEmpty.filter(c=>typeof c==="string" && c.length>0 && c.length<60 && !/^-?\d+(\.\d+)?$/.test(c.trim()) && !(c instanceof Date));
-    // data richness in the rows below
-    const below = aoa.slice(r+1, r+6).filter(rr=>rr && rr.some(c=>c!=null&&c!==""));
-    if(below.length < 1) continue;
-    const belowFill = below.reduce((s,rr)=>s+rr.filter(c=>c!=null&&c!=="").length,0)/below.length;
-    if(belowFill < 2) continue;
-    const score = strCells.length*2 + Math.min(belowFill, nonEmpty.length) - r*0.6;
-    if(score > best.score) best = {row:r, score};
-  }
-  return best.row;
-}
-
-/* ============================================================
-   COLUMN TYPE INFERENCE + PROFILING
-   ============================================================ */
-const RE = {
-  currency: v => /^-?\$\s?[\d,]+(\.\d+)?$/.test(String(v).trim()) || /^-?[\d,]+\.\d{2}$/.test(String(v).trim()),
-  pctStr:   v => /^-?\d+(\.\d+)?\s?%$/.test(String(v).trim()),
-  intStr:   v => /^-?\d+$/.test(String(v).trim()),
-  numStr:   v => /^-?[\d,]+(\.\d+)?$/.test(String(v).trim()),
-  dateStr:  v => /^\d{4}-\d{1,2}-\d{1,2}/.test(String(v)) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(String(v)),
-  timeStr:  v => /^\d{1,2}:\d{2}(:\d{2})?(\s?[ap]m)?$/i.test(String(v).trim()),
-  leadZero: v => /^0\d+$/.test(String(v).trim()),
+const api = {
+  async health(){ const r=await fetch(state.backend.url+"/health",{cache:"no-store"}); return r.json(); },
+  async profile(file){ const fd=new FormData(); fd.append("file",file); const r=await fetch(state.backend.url+"/profile",{method:"POST",body:fd}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
+  async ingest(plan){ const r=await fetch(state.backend.url+"/ingest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(plan)}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
+  async confirm(confs){ const r=await fetch(state.backend.url+"/registry/confirm",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirmations:confs})}); return r.json(); },
 };
-function inferColumn(values){
-  const v = values.filter(x=>x!=null && x!=="");
-  const total = values.length;
-  const nullRate = total? (total - v.length)/total : 1;
-  const distinct = new Set(v.map(x=>String(x))).size;
-  if(!v.length) return { type:"empty", nullRate:1, distinct:0, sample:[], allZero:false, leadingZero:false, bigIntNum:false, isCurrency:false };
-
-  const test = (fn)=> v.filter(fn).length / v.length;
-  const isDate = test(x=> x instanceof Date || RE.dateStr(x)) > 0.8;
-  const isTime = !isDate && test(RE.timeStr) > 0.8;
-  const isCurrency = test(x=>RE.currency(x) && !RE.intStr(x)) > 0.6 || (test(x=>typeof x==="string"&&x.includes("$"))>0.5);
-  const numeric = test(x=> typeof x==="number" || RE.numStr(x)) > 0.85;
-  const allZero = numeric && v.every(x=> Number(String(x).replace(/[,$]/g,"")) === 0);
-  const leadingZero = test(RE.leadZero) > 0.5;            // codes like 00002592 (stored as text)
-  const bigIntNum = numeric && v.every(x=> typeof x==="number" && Number.isInteger(x) && Math.abs(x) >= 1e8); // SKU/UPC as number
-  const constant = distinct === 1;
-
-  let type = "string";
-  if(isDate) type = "date";
-  else if(isTime) type = "time";
-  else if(isCurrency) type = "currency";
-  else if(numeric) type = "number";
-
-  return { type, nullRate, distinct, sample: v.slice(0,5), allZero, leadingZero, bigIntNum, constant, isCurrency, numeric };
-}
-
-const MEASURE_HINT = /(qty|quantity|units?|sold|cases?|bottles?|amount|amt|revenue|sales|net|gross|price|cost|fob|msrp|total|count|sum|volume|liters?)/i;
-const ID_HINT      = /(sku|upc|ean|gtin|barcode|code|id$|_id|key|account|product|customer)/i;
-const DATE_HINT    = /(date|day|month|year|period|time)/i;
-// Boundary-safe: leading start/non-letter, trailing non-letter/end so "Employee_Matt" matches but "Sampler"/"Company"/"Household" don't.
-const INTERNAL_RE  = /(^|[^a-z])(employee|salesrep|sales ?rep|sample|comp|complimentary|donation|staff|internal|supplier|house ?account|admin)([^a-z]|$)/i;
-
-function roleFor(name, col){
-  if(col.type==="empty" || col.constant || col.allZero) return "ignore";
-  if(col.type==="date" || col.type==="time" || DATE_HINT.test(name)) return "timestamp";
-  if(ID_HINT.test(name) || col.leadingZero || col.bigIntNum) return "id";
-  if((col.type==="number"||col.type==="currency") && MEASURE_HINT.test(name)) return "measure";
-  if(col.type==="number"||col.type==="currency") return "measure";
-  return "dimension";
-}
-function targetType(name, col, role){
-  if(role==="id") return "string";            // preserve codes — never lose precision
-  if(col.type==="currency") return "decimal";
-  if(role==="timestamp" || col.type==="date") return "date";
-  if(col.type==="time") return "time";
-  if(col.type==="number") return Number.isInteger(Number(col.sample[0])) && !MEASURE_HINT.test(name) ? "integer" : "decimal";
-  return "string";
-}
-
-/* ============================================================
-   PROFILE A DATA SHEET
-   ============================================================ */
-function buildProfile(sheet){
-  const { aoa, headerRow } = sheet;
-  const rawHeaders = (aoa[headerRow]||[]).map((h,i)=> (h==null||h==="") ? `column_${i+1}` : String(h).trim());
-  const dataRows = aoa.slice(headerRow+1).filter(r=>r && r.some(c=>c!=null&&c!==""));
-  const columns = rawHeaders.map((h, i)=>{
-    const colVals = dataRows.map(r=>r[i] ?? null);
-    const info = inferColumn(colVals);
-    const role = roleFor(h, info);
-    return { index:i, source:h, canonical:snake(h), ...info, role, ttype: targetType(h, info, role) };
-  });
-  return { sheetName: sheet.name, headerRow, columns, rowCount: dataRows.length, dataRows, rawHeaders };
-}
-
-/* ============================================================
-   PIPELINE + SCHEMA GENERATION (the "AI")
-   ============================================================ */
-function generateSpec(workbook, profile, refineBase){
-  const rules = [];
-  let rid = 0;
-  const add = r => { rules.push({ id:"r"+(++rid), enabled:true, ...r }); };
-  const cols = profile.columns;
-
-  // --- metadata sheets present? note them ---
-  const metaSheets = workbook.sheets.filter(s=>s.kind==="metadata").map(s=>s.name);
-
-  // --- structural rules ---
-  add({ kind:"select_sheet", title:`Use sheet “${profile.sheetName}” as the data source`,
-        confidence:0.95, spec:{ sheet: profile.sheetName }, why: workbook.sheets.length>1 ? `${workbook.sheets.length} sheets found; this one has the widest tabular data.` : "Single sheet." });
-  if(profile.headerRow > 0)
-    add({ kind:"header_row", title:`Treat row ${profile.headerRow+1} as the header (skip ${profile.headerRow} preamble row${profile.headerRow>1?"s":""})`,
-          confidence:0.9, spec:{ headerRow: profile.headerRow }, why:"Rows above are titles/metadata, not data." });
-
-  // --- per-column casts / cleanups ---
-  cols.forEach(c=>{
-    if(c.role==="id" && (c.bigIntNum || c.numeric) && !c.leadingZero)
-      add({ kind:"cast", title:`Store “${c.source}” as text to preserve the full code`, confidence:0.9,
-            spec:{ column:c.source, to:"string" }, why:"Looks like an identifier (SKU/UPC/code) — keeping it numeric risks scientific-notation / precision loss." });
-    if(c.isCurrency)
-      add({ kind:"cast", title:`Parse “${c.source}” as a number (strip $ and commas)`, confidence:0.9,
-            spec:{ column:c.source, to:"currency" }, why:`Sample: ${c.sample.slice(0,2).join(", ")}` });
-    if(c.type==="date")
-      add({ kind:"cast", title:`Normalize “${c.source}” to ISO date (YYYY-MM-DD)`, confidence:0.85,
-            spec:{ column:c.source, to:"date" }, why:"Mixed date formats normalize to one." });
-  });
-
-  // --- combine split Date + Time columns ---
-  const dateCol = cols.find(c=>/^date$/i.test(c.source) || (c.type==="date" && /date/i.test(c.source)));
-  const timeCol = cols.find(c=>/^time$/i.test(c.source) || c.type==="time");
-  if(dateCol && timeCol && dateCol.index!==timeCol.index)
-    add({ kind:"combine_datetime", title:`Combine “${dateCol.source}” + “${timeCol.source}” into one timestamp`, confidence:0.8,
-          spec:{ dateCol:dateCol.source, timeCol:timeCol.source, target:"event_timestamp" }, why:"Date and time are split across two columns." });
-
-  // --- drop empty / constant / all-zero columns ---
-  cols.filter(c=>c.role==="ignore").forEach(c=>{
-    const reason = c.type==="empty"?"always empty": c.allZero?"always zero":"single constant value";
-    add({ kind:"drop_column", title:`Drop “${c.source}” (${reason})`, confidence:0.85,
-          spec:{ column:c.source }, why:`Carries no information (${reason}).` });
-  });
-
-  // --- internal / non-sale row filters ---
-  const internalCol = cols.find(c=> c.type==="string" && c.sample.concat((profile.dataRows||[]).slice(0,300).map(r=>r[c.index])).some(v=>v && INTERNAL_RE.test(String(v))) );
-  if(internalCol){
-    const tokens = [...new Set(profile.dataRows.map(r=>r[internalCol.index]).filter(v=>v&&INTERNAL_RE.test(String(v))).map(v=>String(v).match(INTERNAL_RE)[2].trim()))].slice(0,6);
-    add({ kind:"filter", title:`Drop internal/non-customer rows in “${internalCol.source}”`, confidence:0.7,
-          spec:{ column:internalCol.source, op:"regex_not", value:INTERNAL_RE.source, label:tokens.join(", ") },
-          why:`Found values like: ${tokens.join(", ")} — typically employee/sample/internal rows, not real sales.` });
+async function checkHealth(){
+  try{ const h=await api.health(); state.backend.healthy=true; state.backend.dagster=h.dagster;
+    $("#status").className="status-pill up"; $("#status-text").textContent="backend: up";
+    $("#engine-info").innerHTML=`compact-dagster<br><code>${esc(h.dagster)}</code><br>in-process materialize()`;
+  }catch{ state.backend.healthy=false;
+    $("#status").className="status-pill down"; $("#status-text").textContent="backend: down";
+    $("#engine-info").innerHTML="offline fallback<br>(start <code>run-backend.ps1</code> for Dagster)";
   }
-
-  // --- zero / blank quantity filter ---
-  const qtyCol = cols.find(c=>(c.type==="number") && /(qty|quantity|units?|sold|cases?)/i.test(c.source));
-  if(qtyCol)
-    add({ kind:"filter", title:`Drop rows where “${qtyCol.source}” is zero or blank`, confidence:0.6, enabled:false,
-          spec:{ column:qtyCol.source, op:"gt", value:0 }, why:"Zero-quantity rows are often placeholders. Off by default — enable if appropriate." });
-
-  // --- blank primary-name filter ---
-  const nameCol = cols.find(c=>/(customer|account|name|store|outlet|client)/i.test(c.source) && c.type==="string" && c.role!=="id");
-  if(nameCol && nameCol.nullRate > 0.001)
-    add({ kind:"filter", title:`Drop rows with a blank “${nameCol.source}”`, confidence:0.7,
-          spec:{ column:nameCol.source, op:"not_empty" }, why:`${(nameCol.nullRate*100).toFixed(0)}% of rows have no value here.` });
-
-  // --- derive line total when qty + unit price exist but no total ---
-  const priceCol = cols.find(c=>(c.type==="number"||c.type==="currency") && /(price|fob|cost|msrp|unit)/i.test(c.source));
-  const hasTotal = cols.some(c=>/(total|revenue|net|amount|extended)/i.test(c.source));
-  if(qtyCol && priceCol && !hasTotal)
-    add({ kind:"derive", title:`Derive “line_total” = ${qtyCol.source} × ${priceCol.source}`, confidence:0.5, enabled:false,
-          spec:{ target:"line_total", op:"multiply", a:qtyCol.source, b:priceCol.source }, why:"No revenue/total column found; this reconstructs it. Off by default." });
-
-  // --- dedupe ---
-  add({ kind:"dedupe", title:"Drop exact duplicate rows", confidence:0.6, enabled:false, spec:{}, why:"Off by default — enable if the source double-reports." });
-
-  // ---------- schema ----------
-  const droppedSources = new Set(rules.filter(r=>r.kind==="drop_column"&&r.enabled).map(r=>r.spec.column));
-  const schemaCols = [];
-  cols.forEach(c=>{
-    if(droppedSources.has(c.source) || c.role==="ignore") return;
-    schemaCols.push({ name:c.canonical, type:c.ttype, role:c.role, source:c.source, include:true });
-  });
-  if(dateCol && timeCol){
-    const drop = new Set([dateCol.source, timeCol.source]);
-    for(let i=schemaCols.length-1;i>=0;i--) if(drop.has(schemaCols[i].source)) schemaCols.splice(i,1);
-    schemaCols.unshift({ name:"event_timestamp", type:"timestamp", role:"timestamp", source:`${dateCol.source}+${timeCol.source}`, include:true });
-  }
-
-  let mode = "create";
-  if(refineBase){
-    mode = "refine";
-    // map onto existing canonical names where they already exist; flag new ones
-    const baseNames = new Set(refineBase.columns.map(c=>c.name));
-    schemaCols.forEach(c=> c.isNew = !baseNames.has(c.name));
-  }
-
-  const schema = {
-    table: state.datasetName ? snake(state.datasetName) : snake(profile.sheetName)+"_clean",
-    mode,
-    columns: schemaCols,
-  };
-
-  const formatGuess = guessFormat(workbook, profile);
-  return { sheet: profile.sheetName, headerRow: profile.headerRow, schema, rules, metaSheets, formatGuess };
 }
 
-function guessFormat(workbook, profile){
-  const names = workbook.sheets.map(s=>s.name.toLowerCase()).join(" ");
-  const headers = profile.rawHeaders.join(" ").toLowerCase();
-  if(/report-sales-detail|supplier key|supplier's sku/.test(names+" "+headers)) return "vendor-multi-sheet-report";
-  if(/time zone|price point|modifiers applied/.test(headers)) return "pos-transaction-export";
-  if(/importer|depletion|account region|sales rep/.test(headers)) return "distributor-depletion";
-  if(workbook.sheets.length>1) return "multi-sheet-workbook";
-  return "flat-tabular";
-}
-
-/* ============================================================
-   PIPELINE EXECUTOR  (deterministic — drives dry-run + publish)
-   ============================================================ */
-function toNumber(v){ if(v==null||v==="")return null; const n=Number(String(v).replace(/[,$%\s]/g,"")); return isNaN(n)?null:n; }
-function toISODate(v){
-  if(v instanceof Date) return v.toISOString().slice(0,10);
-  const s=String(v).trim();
-  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
-  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if(m){ let y=m[3]; if(y.length===2)y="20"+y; return `${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; }
-  return s;
-}
-function toTimeOfDay(v){
-  if(v==null||v==="") return "00:00:00";
-  const p=n=>String(n).padStart(2,"0");
-  // Excel time cells arrive as JS Dates on the 1899-12-31 epoch — take the wall-clock time.
-  if(v instanceof Date) return `${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`;
-  // Bare Excel serial fraction (fraction of a 24h day).
-  if(typeof v==="number"){ let s=Math.round((v-Math.floor(v))*86400); return `${p(Math.floor(s/3600))}:${p(Math.floor(s%3600/60))}:${p(s%60)}`; }
-  const m=String(v).trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  return m ? `${m[1].padStart(2,"0")}:${m[2]}:${m[3]||"00"}` : "00:00:00";
-}
-function executePipeline(workbook, spec){
-  const enabled = spec.rules.filter(r=>r.enabled);
-  const sheet = workbook.sheets.find(s=>s.name===spec.sheet) || workbook.sheets.find(s=>s.kind==="data");
-  const headerRow = spec.headerRow ?? sheet.headerRow;
-  const headers = (sheet.aoa[headerRow]||[]).map((h,i)=> (h==null||h==="")?`column_${i+1}`:String(h).trim());
-  let rows = sheet.aoa.slice(headerRow+1).filter(r=>r && r.some(c=>c!=null&&c!=="")).map(r=>{
-    const o={}; headers.forEach((h,i)=>o[h]=r[i] ?? null); return o;
-  });
-  const inputCount = rows.length;
-  const dropped = [];
-
-  // transforms first (combine/cast/derive/drop_column), then filters, then dedupe.
-  // combine runs before casts so it reads the original Date/Time cells, not cast-mutated values.
-  enabled.filter(r=>r.kind==="combine_datetime").forEach(r=>{
-    const {dateCol,timeCol,target}=r.spec; rows.forEach(o=>{ const d=toISODate(o[dateCol]); const t=toTimeOfDay(o[timeCol]); o[target]= d? `${d}T${t}`:null; });
-  });
-  enabled.filter(r=>r.kind==="cast").forEach(r=>{
-    const {column,to}=r.spec; rows.forEach(o=>{ if(o[column]==null)return;
-      if(to==="string") o[column]=typeof o[column]==="number"? (Number.isInteger(o[column])?o[column].toFixed(0):String(o[column])) : String(o[column]);
-      else if(to==="currency") o[column]=toNumber(o[column]);
-      else if(to==="date") o[column]=toISODate(o[column]);
-    });
-  });
-  enabled.filter(r=>r.kind==="derive").forEach(r=>{
-    const {target,a,b}=r.spec; rows.forEach(o=>{ const av=toNumber(o[a]), bv=toNumber(o[b]); o[target]=(av!=null&&bv!=null)?+(av*bv).toFixed(4):null; });
-  });
-
-  // filters
-  const filters = enabled.filter(r=>r.kind==="filter");
-  rows = rows.filter(o=>{
-    for(const r of filters){
-      const {column,op,value}=r.spec; const v=o[column];
-      let keep=true;
-      if(op==="not_empty") keep = !(v==null||String(v).trim()==="");
-      else if(op==="gt") keep = toNumber(v)!=null && toNumber(v) > value;
-      else if(op==="regex_not") keep = !(v!=null && new RegExp(value,"i").test(String(v)));
-      else if(op==="in") keep = (value||[]).map(x=>String(x).toLowerCase()).includes(String(v).toLowerCase());
-      else if(op==="not_in") keep = !(value||[]).map(x=>String(x).toLowerCase()).includes(String(v).toLowerCase());
-      if(!keep){ dropped.push({ row:o, rule:r.title }); return false; }
-    }
-    return true;
-  });
-
-  // dedupe
-  if(enabled.some(r=>r.kind==="dedupe")){
-    const seen=new Set(); const out=[];
-    rows.forEach(o=>{ const k=JSON.stringify(o); if(seen.has(k)){dropped.push({row:o,rule:"Exact duplicate"});} else {seen.add(k);out.push(o);} });
-    rows=out;
-  }
-
-  // project onto schema (rename source→canonical, keep included)
-  const dropCols = new Set(enabled.filter(r=>r.kind==="drop_column").map(r=>r.spec.column));
-  const map = spec.schema.columns.filter(c=>c.include);
-  const projected = rows.map(o=>{
-    const out={};
-    map.forEach(c=>{
-      if(c.source && c.source.includes("+")) out[c.name]=o[c.name] ?? o[snake(c.name)] ?? o["event_timestamp"];
-      else out[c.name]= o[c.source];
-    });
-    return out;
-  });
-
-  // DQ stats
-  const dq = map.map(c=>{
-    const vals = projected.map(r=>r[c.name]);
-    const nulls = vals.filter(v=>v==null||v==="").length;
-    return { name:c.name, type:c.type, nullPct: projected.length? +(nulls/projected.length*100).toFixed(1):0, distinct:new Set(vals.map(v=>String(v))).size };
-  });
-
-  return { inputCount, keptCount: projected.length, droppedCount: dropped.length, dropped, rows: projected, schemaCols: map, dq };
-}
-
-/* ============================================================
-   OUTPUT BUILDERS
-   ============================================================ */
-const SQL_TYPE = { string:"TEXT", integer:"INTEGER", decimal:"NUMERIC", date:"DATE", time:"TIME", timestamp:"TIMESTAMP" };
-function buildDDL(schema){
-  const cols = schema.columns.filter(c=>c.include).map(c=>`  ${c.name} ${SQL_TYPE[c.type]||"TEXT"}`);
-  return `CREATE TABLE ${schema.table} (\n${cols.join(",\n")}\n);`;
-}
-function toCSV(rows, cols){
-  const head = cols.map(c=>c.name).join(",");
-  const body = rows.map(r=>cols.map(c=>{ let v=r[c.name]; if(v==null)return ""; v=String(v); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v; }).join(","));
-  return [head,...body].join("\n");
-}
-
-/* ============================================================
-   SCHEMA LIBRARY (localStorage) — enables "refine"
-   ============================================================ */
-function loadLibrary(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); }catch{ return {}; } }
-function saveToLibrary(schema){ const lib=loadLibrary(); lib[schema.table]={ ...schema, savedAt:new Date().toISOString() }; localStorage.setItem(LS_KEY, JSON.stringify(lib)); renderLibrary(); }
-function renderLibrary(){
-  const lib=loadLibrary(); const ul=$("#library"); ul.innerHTML="";
-  const keys=Object.keys(lib);
-  if(!keys.length){ ul.appendChild(el("li",{html:'<span class="empty-hint" style="padding:8px;font-size:12px;">No saved schemas yet</span>'})); return; }
-  keys.forEach(k=>{
-    ul.appendChild(el("li",{},[ el("button",{onclick:()=>{ state.refineBase=lib[k]; state.datasetName=k; $("#dataset-name").value=k; alert(`Next upload will REFINE the existing schema “${k}” (${lib[k].columns.length} columns).`); }},
-      [ el("span",{class:"dot done"}), `${k} · ${lib[k].columns.length} cols` ]) ]));
-  });
-}
-
-/* ============================================================
-   RENDER
-   ============================================================ */
+function maxReached(){ if(state.ingest)return 5; if(Object.keys(state.rulesBySheet).length)return 4; if(state.sheets.length)return 3; return state.fileId?1:0; }
 function renderNav(){
   const ul=$("#nav"); ul.innerHTML="";
   STEPS.forEach((s,i)=>{
-    const reachable = i===0 || (state.workbook && i<=maxReached());
-    ul.appendChild(el("li",{},[ el("button",{ class:i===state.step?"active":"", disabled: !reachable, onclick:()=>{ if(reachable){state.step=i;render();} } },
-      [ el("span",{class:"dot "+(i<state.step?"done":i===state.step?"active":"")}), `${i+1}. ${s}` ]) ]));
+    const reach=i<=Math.max(maxReached(),state.step);
+    ul.appendChild(el("li",{},[el("button",{class:i===state.step?"active":"",disabled:!reach,onclick:()=>{if(reach){state.step=i;render();}}},
+      [el("span",{class:"dot "+(i<state.step?"done":i===state.step?"active":"")}),`${i+1}. ${s}`])]));
   });
-}
-function maxReached(){
-  if(state.result) return 5;
-  if(state.spec) return 4;
-  if(state.profile) return 2;
-  if(state.workbook) return 1;
-  return 0;
 }
 function wizardBar(){
   const bar=el("div",{class:"wizard"});
-  STEPS.forEach((s,i)=>{
-    const cls = i<state.step?"done":i===state.step?"active":"";
-    bar.appendChild(el("span",{class:"w-step "+cls, onclick:()=>{ if(i<=maxReached()){state.step=i;render();} }},
-      [ el("span",{class:"num"}, i<state.step?"✓":String(i+1)), s ]));
-    if(i<STEPS.length-1) bar.appendChild(el("span",{class:"w-sep"},"—"));
-  });
+  STEPS.forEach((s,i)=>{const c=i<state.step?"done":i===state.step?"active":"";
+    bar.appendChild(el("span",{class:"w-step "+c,onclick:()=>{if(i<=maxReached()){state.step=i;render();}}},[el("span",{class:"num"},i<state.step?"✓":String(i+1)),s]));
+    if(i<STEPS.length-1)bar.appendChild(el("span",{class:"w-sep"},"—"));});
   return bar;
 }
 function render(){
   renderNav();
   $("#crumb").textContent = state.fileName ? `${state.fileName} · ${STEPS[state.step]}` : "New ingestion";
-  const m=$("#main"); m.innerHTML="";
-  m.appendChild(wizardBar());
-  ({0:renderUpload,1:renderProfile,2:renderSchema,3:renderRules,4:renderDryRun,5:renderPublish}[state.step])(m);
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  ({0:rUpload,1:rSheets,2:rEntities,3:rRules,4:rRun,5:rExport}[state.step])(m);
 }
+function reRender(){ render(); }
 
-/* ---------- Step 0: Upload ---------- */
-function renderUpload(m){
-  m.appendChild(el("h1",{class:"page-title"},"Upload a sample file"));
-  m.appendChild(el("p",{class:"page-sub"},"Drop any messy spreadsheet or CSV. Pipeline Studio profiles it, proposes a clean schema, and builds an executable ingestion pipeline — all in your browser."));
-  if(state.refineBase) m.appendChild(el("div",{class:"alert info"},[ icon("info"), el("div",{html:`<b>Refine mode.</b> This upload will be reconciled against the saved schema <code>${esc(state.refineBase.table)}</code>.`}) ]));
-
+/* Step 0: Upload */
+function rUpload(m){
+  m.appendChild(el("h1",{class:"page-title"},"Upload a file"));
+  m.appendChild(el("p",{class:"page-sub"},"Drop a messy spreadsheet/CSV. The backend profiles every sheet, suggests a canonical schema, and compiles a Dagster ingestion pipeline."));
+  if(!state.backend.healthy)
+    m.appendChild(el("div",{class:"alert warn"},[icon("warn"),el("div",{html:`<b>Backend not reachable</b> at <code>${esc(state.backend.url)}</code>. Start it with <code>run-backend.ps1</code> for full multi-sheet + entity-matching + Dagster execution. You can still do a basic offline preview below.`})]));
   const dz=el("div",{class:"drop-zone"},[
     el("div",{class:"icon",html:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'}),
-    el("h3",{},"Drop a file here or click to browse"),
-    el("p",{},"Handles multi-sheet workbooks, metadata/preamble rows, split date-time, scientific-notation codes, and internal-sale rows."),
-    el("div",{class:"formats"}, [".xlsx",".xls",".csv",".tsv"].map(f=>el("span",{class:"fmt"},f)))
+    el("h3",{}, state.backend.healthy?"Drop a file or click to browse":"Drop a file (offline preview)"),
+    el("p",{},"Multi-sheet workbooks, metadata sheets, split date/time, scientific-notation codes, internal-sale rows — all handled."),
+    el("div",{class:"formats"},[".xlsx",".xls",".csv",".tsv"].map(f=>el("span",{class:"fmt"},f)))
   ]);
-  const input=el("input",{type:"file",accept:".xlsx,.xls,.csv,.tsv,.txt",class:"hidden",onchange:e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); }});
+  const input=el("input",{type:"file",accept:".xlsx,.xls,.csv,.tsv,.txt",class:"hidden",onchange:e=>{if(e.target.files[0])handleFile(e.target.files[0]);}});
   dz.addEventListener("click",()=>input.click());
   dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("hover");});
   dz.addEventListener("dragleave",()=>dz.classList.remove("hover"));
-  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("hover"); if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("hover");if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
   m.appendChild(dz); m.appendChild(input);
 }
 async function handleFile(file){
+  state.fileName=file.name;
+  state.ingest=null; state.rulesBySheet={}; state.overrides={}; state.groupsEnabled={};
+  if(!state.backend.healthy){ return offlineParse(file); }
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{},"Profiling all sheets on the backend…")]));
   try{
-    state.fileName=file.name;
-    state.datasetName = $("#dataset-name").value.trim();
-    state.workbook = await parseFile(file);
-    const dataSheets = state.workbook.sheets.filter(s=>s.kind==="data");
-    const primary = dataSheets.sort((a,b)=> (b.widthAtHeader*b.dataRows)-(a.widthAtHeader*a.dataRows))[0] || state.workbook.sheets[0];
-    state.profile = buildProfile(primary);
-    state.spec=null; state.result=null;
+    const p=await api.profile(file);
+    state.fileId=p.fileId; state.fileName=p.fileName; state.sheets=p.sheets;
+    state.unionGroups=p.unionGroups; state.registry=p.registry;
+    state.unionGroups.forEach(g=>state.groupsEnabled[g.table]=true);
+    state.sheets.filter(s=>s.kind==="data").forEach(s=>{
+      state.rulesBySheet[s.name]=s.rules.map(r=>({...r}));
+      (s.entityMatches||[]).forEach(em=>{ if(em.entity && em.entity.entity && em.entity.confidence>=0.62) state.overrides[em.source]=em.entity.entity; });
+    });
     state.step=1; render();
-  }catch(err){ alert("Could not read file: "+err.message); }
+  }catch(e){ alert("Profile failed: "+e.message); state.step=0; render(); }
 }
 
-/* ---------- Step 1: Profile ---------- */
-function renderProfile(m){
-  const wb=state.workbook, p=state.profile;
-  m.appendChild(el("h1",{class:"page-title"},"What we found in your file"));
-  m.appendChild(el("p",{class:"page-sub"},`${state.fileName} · profiled entirely in-browser.`));
-
-  // stats
+/* Step 1: Sheets */
+function rSheets(m){
+  const data=state.sheets.filter(s=>s.kind==="data"), meta=state.sheets.filter(s=>s.kind==="metadata");
+  m.appendChild(el("h1",{class:"page-title"},"Sheets & tables"));
+  m.appendChild(el("p",{class:"page-sub"},`${state.fileName} — every sheet profiled. Metadata/sidecar sheets are detected and skipped; compatible data sheets are unioned into one table.`));
   const grid=el("div",{class:"stat-grid"});
-  [["Sheets",wb.sheets.length],["Data rows",p.rowCount.toLocaleString()],["Columns",p.columns.length],
-   ["Header row",`#${p.headerRow+1}`],["Issues flagged", p.columns.filter(c=>c.role==="ignore"||c.bigIntNum||c.leadingZero||c.isCurrency).length]
-  ].forEach(([l,v])=>grid.appendChild(el("div",{class:"stat-card"},[el("div",{class:"label"},l),el("div",{class:"value"},String(v))])));
+  [["Sheets",state.sheets.length],["Data sheets",data.length],["Metadata skipped",meta.length],["Tables proposed",state.unionGroups.length]]
+    .forEach(([l,v])=>grid.appendChild(el("div",{class:"stat-card"},[el("div",{class:"label"},l),el("div",{class:"value"},String(v))])));
   m.appendChild(grid);
 
-  // multi-sheet picker
-  if(wb.sheets.length>1){
-    const pane=el("div",{class:"pane"});
-    pane.appendChild(el("div",{class:"pane-title"},"Sheets detected — pick the data source"));
-    wb.sheets.forEach(s=>{
-      const chosen = s.name===p.sheetName;
-      pane.appendChild(el("div",{class:"rule "+(chosen?"":"off"),style:"cursor:pointer",onclick:()=>{ state.profile=buildProfile(s); state.spec=null; state.result=null; render(); }},[
-        el("span",{class:"dot "+(chosen?"done":""),style:"width:10px;height:10px;border-radius:50%;margin-top:5px;"}),
-        el("div",{class:"body"},[
-          el("div",{class:"rt"},[ s.name+" ", el("span",{class:"badge "+(s.kind==="data"?"info":"muted")}, s.kind) ]),
-          el("div",{class:"impact"},`${s.dataRows} rows × ${s.widthAtHeader} cols · header at row ${s.headerRow+1}`)
-        ])
-      ]));
-    });
-    m.appendChild(pane);
-  }
-
-  // side-by-side: raw preview + column profile
-  const split=el("div",{class:"split-2"});
-  // raw preview
-  const prevPane=el("div",{class:"pane"});
-  prevPane.appendChild(el("div",{class:"pane-title"},`Raw preview · ${p.sheetName}`));
-  prevPane.appendChild(rawPreview(wb.sheets.find(s=>s.name===p.sheetName), p.headerRow));
-  split.appendChild(prevPane);
-  // column profile
-  const colPane=el("div",{class:"pane"});
-  colPane.appendChild(el("div",{class:"pane-title"},"Column profile"));
-  const tbl=el("div",{class:"scroll-x"});
-  const t=el("table",{class:"data"});
-  t.appendChild(el("thead",{html:"<tr><th>Source column</th><th>Type</th><th>Role</th><th>Null %</th><th>Flags</th></tr>"}));
-  const tb=el("tbody");
-  p.columns.forEach(c=>{
-    const flags=[]; if(c.bigIntNum)flags.push("sci-notation id"); if(c.leadingZero)flags.push("leading-zero code"); if(c.isCurrency)flags.push("currency"); if(c.allZero)flags.push("all zero"); if(c.constant)flags.push("constant"); if(c.type==="empty")flags.push("empty");
-    tb.appendChild(el("tr",{},[
-      el("td",{html:`<code>${esc(c.source)}</code>`}),
-      el("td",{},el("span",{class:"badge muted"},c.type)),
-      el("td",{},el("span",{class:"badge "+({measure:"info",timestamp:"purple",id:"warn",ignore:"bad",dimension:"muted"}[c.role]||"muted")},c.role)),
-      el("td",{},`${(c.nullRate*100).toFixed(0)}%`),
-      el("td",{html: flags.map(f=>`<span class="badge bad" style="margin:1px">${f}</span>`).join("")||'<span class="badge ok">clean</span>'})
+  const sp=el("div",{class:"pane"}); sp.appendChild(el("div",{class:"pane-title"},"Detected sheets"));
+  state.sheets.forEach(s=>{
+    sp.appendChild(el("div",{class:"sheet-card"+(s.kind==="metadata"?" meta":"")},[
+      el("div",{class:"body"},[
+        el("div",{class:"h"},[ s.name, el("span",{class:"badge "+(s.kind==="data"?"info":"muted")},s.kind==="data"?"data":"metadata · skipped") , s.formatGuess?el("span",{class:"badge muted"},s.formatGuess):null ]),
+        el("div",{class:"sub"}, s.kind==="data"?`${s.rowCount} rows · ${s.columns.length} cols · header row ${s.headerRow+1}`:`not tabular data — excluded from ingestion`)
+      ])
     ]));
   });
-  t.appendChild(tb); tbl.appendChild(t); colPane.appendChild(tbl);
-  split.appendChild(colPane);
-  m.appendChild(split);
+  m.appendChild(sp);
 
-  const bar=el("div",{class:"row-between"},[
+  const gp=el("div",{class:"pane"}); gp.appendChild(el("div",{class:"pane-title"},"Proposed tables (union groups)"));
+  state.unionGroups.forEach(g=>{
+    const card=el("div",{class:"group-card"+(g.union?" union":"")});
+    card.appendChild(el("div",{style:"display:flex;align-items:center;gap:10px;margin-bottom:6px"},[
+      el("button",{class:"toggle"+(state.groupsEnabled[g.table]?"":" off"),onclick:()=>{state.groupsEnabled[g.table]=!state.groupsEnabled[g.table];reRender();}}),
+      el("input",{class:"text-in mono",style:"width:200px",value:g.table,onchange:e=>{const old=g.table;const nv=e.target.value.trim()||old;state.groupsEnabled[nv]=state.groupsEnabled[old];if(nv!==old)delete state.groupsEnabled[old];g.table=nv;}}),
+      g.union?el("span",{class:"badge purple"},`union · ${g.members.length} sheets`):el("span",{class:"badge muted"},"single sheet")
+    ]));
+    card.appendChild(el("div",{},g.members.map(mb=>el("span",{class:"chip"},mb))));
+    if(g.sharedEntities&&g.sharedEntities.length) card.appendChild(el("div",{style:"font-size:12px;color:var(--muted);margin-top:6px"},`shared entities: ${g.sharedEntities.join(", ")}`));
+    gp.appendChild(card);
+  });
+  m.appendChild(gp);
+
+  m.appendChild(el("div",{class:"row-between"},[
     el("button",{class:"btn ghost",onclick:()=>{state.step=0;render();}},"← Back"),
-    el("button",{class:"btn primary lg",onclick:()=>{ state.spec=generateSpec(wb,p,state.refineBase); state.step=2; render(); }},"Generate schema + pipeline →")
-  ]);
-  m.appendChild(bar);
-}
-function rawPreview(sheet, headerRow){
-  const wrap=el("div",{class:"file-preview"});
-  wrap.appendChild(el("div",{class:"fname"},`Sheet: "${sheet.name}" — first rows (header highlighted)`));
-  const t=el("table"); const tb=el("tbody");
-  sheet.aoa.slice(0, Math.min(9, sheet.aoa.length)).forEach((r,ri)=>{
-    const tr=el("tr",{class: ri===headerRow?"header-row":""});
-    (r.length?r:[""]).slice(0,9).forEach(c=> tr.appendChild(el("td",{},c==null?"":String(c).slice(0,28))));
-    tb.appendChild(tr);
-  });
-  t.appendChild(tb); wrap.appendChild(t); return wrap;
-}
-
-/* ---------- Step 2: Schema ---------- */
-function renderSchema(m){
-  const sc=state.spec.schema;
-  m.appendChild(el("h1",{class:"page-title"}, sc.mode==="refine"?"Refine existing schema":"Proposed schema"));
-  m.appendChild(el("p",{class:"page-sub"},`Detected format: `));
-  $(".page-sub").innerHTML = `Detected format: <span class="pill">${esc(state.spec.formatGuess)}</span> · edit any target name, type, or role. Uncheck a column to exclude it.`;
-
-  if(state.spec.metaSheets.length)
-    m.appendChild(el("div",{class:"alert warn"},[ icon("warn"), el("div",{html:`Ignored ${state.spec.metaSheets.length} metadata/config sheet(s): <code>${state.spec.metaSheets.map(esc).join("</code>, <code>")}</code>`}) ]));
-  if(sc.mode==="refine")
-    m.appendChild(el("div",{class:"alert info"},[ icon("info"), el("div",{html:`Reconciling against <code>${esc(state.refineBase.table)}</code>. <span class="badge ok">existing</span> columns already in the schema; <span class="badge purple">new</span> columns will be added.`}) ]));
-
-  const pane=el("div",{class:"pane"});
-  // table name
-  pane.appendChild(el("div",{style:"display:flex;gap:10px;align-items:center;margin-bottom:14px;"},[
-    el("span",{class:"pane-title",style:"margin:0;"},"Table"),
-    el("input",{class:"text-in mono",style:"width:280px;",value:sc.table,onchange:e=>{sc.table=snake(e.target.value);}})
+    el("button",{class:"btn primary lg",onclick:()=>{state.step=2;render();}},"Review entity mappings →")
   ]));
-  // header
-  pane.appendChild(el("div",{class:"map-row head"},[ el("div",{},"Source column"), el("div",{}), el("div",{},"Target field"), el("div",{},"Type"), el("div",{},"Role") ]));
-  sc.columns.forEach(c=>{
-    const row=el("div",{class:"map-row"+(c.include?"":" ignored")});
-    const chk=el("input",{type:"checkbox",style:"margin-right:6px;"}); chk.checked=c.include; chk.addEventListener("change",()=>{c.include=chk.checked; renderSchema(clearMain());});
-    row.appendChild(el("div",{style:"display:flex;align-items:center;"},[chk, el("span",{class:"map-src",title:c.source},c.source + (c.isNew?"":""))]));
-    row.appendChild(el("div",{class:"map-arrow"},"→"));
-    const tgt=el("input",{class:"tgt",value:c.name,onchange:e=>c.name=snake(e.target.value)});
-    row.appendChild(tgt);
-    const typeSel=el("select",{onchange:e=>c.type=e.target.value}); ["string","integer","decimal","date","time","timestamp"].forEach(t=>typeSel.appendChild(el("option",{value:t,...(t===c.type?{selected:"selected"}:{})},t))); row.appendChild(typeSel);
-    const roleSel=el("select",{onchange:e=>c.role=e.target.value}); ["dimension","measure","id","timestamp","ignore"].forEach(t=>roleSel.appendChild(el("option",{value:t,...(t===c.role?{selected:"selected"}:{})},t))); row.appendChild(roleSel);
-    if(c.isNew){ const b=el("span",{class:"badge purple",style:"margin-left:6px;"},"new"); row.children[0].appendChild(b); }
-    pane.appendChild(row);
+}
+
+/* Step 2: Entities */
+function rEntities(m){
+  m.appendChild(el("h1",{class:"page-title"},"Entity mappings"));
+  m.appendChild(el("p",{class:"page-sub"},"Each source column is matched to a canonical entity so the same thing joins across formats (CustName / Customer Name / Account → customer). Confirm or override — saving teaches the registry for next time."));
+  const entityNames=[...state.registry.map(e=>e.name)].sort();
+  state.sheets.filter(s=>s.kind==="data").forEach(s=>{
+    const pane=el("div",{class:"pane"});
+    pane.appendChild(el("div",{class:"pane-title"},`${s.name} — ${s.columns.length} columns`));
+    pane.appendChild(el("div",{class:"map-row head"},[el("div",{},"Source column"),el("div",{}),el("div",{},"Canonical entity"),el("div",{},"Confidence"),el("div",{},"Via")]));
+    (s.entityMatches||[]).forEach(em=>{
+      const e=em.entity||{}; const cur=state.overrides[em.source] ?? (e.entity&&e.confidence>=0.62?e.entity:"");
+      const row=el("div",{class:"map-row"});
+      row.appendChild(el("div",{class:"map-src",title:em.source},em.source));
+      row.appendChild(el("div",{class:"map-arrow"},"→"));
+      const sel=el("select",{onchange:ev=>{const v=ev.target.value; if(v==="")delete state.overrides[em.source]; else state.overrides[em.source]=v;}});
+      sel.appendChild(el("option",{value:""},"— unmatched —"));
+      entityNames.forEach(n=>sel.appendChild(el("option",{value:n,...(n===cur?{selected:"selected"}:{})},n)));
+      if(cur && !entityNames.includes(cur)) sel.appendChild(el("option",{value:cur,selected:"selected"},cur));
+      row.appendChild(sel);
+      const conf=e.confidence||0; const cls=conf>=0.8?"ok":conf>=0.62?"warn":"muted";
+      row.appendChild(el("div",{},el("span",{class:"badge "+cls},conf?conf.toFixed(2):"—")));
+      row.appendChild(el("div",{html:`<span class="badge muted">${e.via||"none"}</span>`}));
+      pane.appendChild(row);
+    });
+    m.appendChild(pane);
   });
-  m.appendChild(pane);
-
-  // DDL preview
-  m.appendChild(el("div",{class:"pane"},[ el("div",{class:"pane-title"},"Generated DDL (preview)"), el("div",{class:"code-block"}, buildDDL(sc)) ]));
-
   m.appendChild(el("div",{class:"row-between"},[
     el("button",{class:"btn ghost",onclick:()=>{state.step=1;render();}},"← Back"),
-    el("button",{class:"btn primary lg",onclick:()=>{state.step=3;render();}},"Review pipeline rules →")
-  ]));
-}
-function clearMain(){ const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar()); return m; }
-
-/* ---------- Step 3: Rules ---------- */
-function renderRules(m){
-  m.appendChild(el("h1",{class:"page-title"},"Ingestion pipeline"));
-  m.appendChild(el("p",{class:"page-sub"},"Each rule is executable. Toggle off anything you disagree with — impact is recomputed live on the sample."));
-
-  // plain-English add
-  const addPane=el("div",{class:"pane",style:"background:var(--purple-soft);border-color:var(--purple);"});
-  addPane.appendChild(el("div",{class:"pane-title",style:"color:var(--purple);"},"Add a rule in plain English"));
-  const inp=el("input",{class:"text-in",style:"width:100%;",placeholder:'e.g. "drop rows where State is not PA"  ·  "drop rows where Qty is empty"  ·  "drop column Notes"'});
-  addPane.appendChild(inp);
-  const chips=el("div",{class:"chip-row"});
-  ["drop rows where Division is Salesrep","drop column Time Zone","drop rows where Qty is empty"].forEach(ex=>chips.appendChild(el("span",{class:"chip",onclick:()=>{inp.value=ex;}},ex)));
-  addPane.appendChild(chips);
-  addPane.appendChild(el("button",{class:"btn primary",style:"margin-top:10px;",onclick:()=>{ if(parseNL(inp.value)){inp.value="";renderRules(clearMain());} else alert('Could not parse. Try: "drop rows where COLUMN is VALUE" or "drop column COLUMN".'); }},"+ Add rule"));
-  m.appendChild(addPane);
-
-  // run a preview execution for impact numbers
-  let preview; try{ preview=executePipeline(state.workbook, state.spec); }catch(e){ preview=null; }
-  const impactByRule={}; if(preview) preview.dropped.forEach(d=>impactByRule[d.rule]=(impactByRule[d.rule]||0)+1);
-
-  state.spec.rules.forEach(r=>{
-    const card=el("div",{class:"rule"+(r.enabled?"":" off")});
-    const tog=el("button",{class:"toggle"+(r.enabled?"":" off"),onclick:()=>{r.enabled=!r.enabled;renderRules(clearMain());}});
-    card.appendChild(tog);
-    const conf = r.confidence>=0.8?["ok","High"]:r.confidence>=0.6?["warn","Medium"]:["bad","Low"];
-    const body=el("div",{class:"body"},[
-      el("div",{class:"rt"},r.title),
-      el("div",{class:"meta"},[ el("span",{class:"badge "+conf[0]},conf[1]+" confidence"), el("span",{class:"badge muted"},r.kind.replace("_"," ")), el("span",{class:"badge info"},"auto-generated") ]),
-      el("div",{class:"spec"}, JSON.stringify(r.spec)),
-      el("div",{class:"impact",html: r.why ? esc(r.why) : "" }),
-    ]);
-    if(impactByRule[r.title]!=null) body.appendChild(el("div",{class:"impact",html:`On sample: drops <b>${impactByRule[r.title]} row${impactByRule[r.title]===1?"":"s"}</b>`}));
-    const del=el("button",{class:"btn ghost",style:"align-self:flex-start;color:var(--bad);",onclick:()=>{ state.spec.rules=state.spec.rules.filter(x=>x.id!==r.id); renderRules(clearMain()); }},"×");
-    card.appendChild(body); card.appendChild(del);
-    m.appendChild(card);
-  });
-
-  m.appendChild(el("div",{class:"row-between"},[
-    el("button",{class:"btn ghost",onclick:()=>{state.step=2;render();}},"← Back"),
-    el("button",{class:"btn primary lg",onclick:()=>{ state.result=executePipeline(state.workbook,state.spec); state.step=4; render(); }},"Run dry-run →")
-  ]));
-}
-function parseNL(text){
-  const t=text.trim(); if(!t)return false;
-  let m=t.match(/^drop column\s+(.+)$/i);
-  if(m){ const col=findCol(m[1]); if(!col)return false; state.spec.rules.push({id:"r"+Date.now(),enabled:true,kind:"drop_column",title:`Drop “${col}”`,confidence:1,spec:{column:col},why:"Added manually."}); return true; }
-  m=t.match(/^drop rows where\s+(.+?)\s+(is not|is|not in|in|is empty|is not empty|>|<)\s*(.*)$/i);
-  if(m){ const col=findCol(m[1]); if(!col)return false; const op=m[2].toLowerCase(); const val=m[3].trim();
-    let spec;
-    if(/empty/.test(op)) spec= op.includes("not")?null:{column:col,op:"not_empty"};
-    else if(op==="is not"||op==="not in") spec={column:col,op:"not_in",value:val.split(/\s*,\s*/)};
-    else if(op==="is"||op==="in") spec={column:col,op:"not_in",value:val.split(/\s*,\s*/)}; // "drop where X is Y" => keep only not-Y
-    else if(op===">") spec={column:col,op:"gt",value:Number(val)};
-    else if(op==="<") spec={column:col,op:"gt",value:Number(val)}; // approximate
-    if(!spec)return false;
-    state.spec.rules.push({id:"r"+Date.now(),enabled:true,kind:"filter",title:`Drop rows where ${col} ${op} ${val}`,confidence:1,spec,why:"Added manually."}); return true;
-  }
-  return false;
-}
-function findCol(name){ const n=name.trim().toLowerCase(); const c=state.profile.columns.find(c=>c.source.toLowerCase()===n)||state.profile.columns.find(c=>c.source.toLowerCase().includes(n)); return c?c.source:null; }
-
-/* ---------- Step 4: Dry-run ---------- */
-function renderDryRun(m){
-  const r=state.result;
-  m.appendChild(el("h1",{class:"page-title"},"Dry-run results"));
-  m.appendChild(el("p",{class:"page-sub"},"The full pipeline applied to your sample. Nothing is persisted until you publish."));
-
-  const grid=el("div",{class:"stat-grid"});
-  [["Input rows",r.inputCount.toLocaleString()],["Kept",r.keptCount.toLocaleString()],["Dropped",r.droppedCount.toLocaleString()],
-   ["Output columns",r.schemaCols.length],["Kept %", r.inputCount? Math.round(r.keptCount/r.inputCount*100)+"%":"—"]
-  ].forEach(([l,v])=>grid.appendChild(el("div",{class:"stat-card"},[el("div",{class:"label"},l),el("div",{class:"value"},String(v))])));
-  m.appendChild(grid);
-
-  // cleaned preview
-  const clean=el("div",{class:"pane"});
-  clean.appendChild(el("div",{class:"pane-title"},"Cleaned output (first 8 rows)"));
-  clean.appendChild(tablePreview(r.rows.slice(0,8), r.schemaCols.map(c=>c.name)));
-  m.appendChild(clean);
-
-  // DQ + dropped
-  const split=el("div",{class:"split-2"});
-  const dqp=el("div",{class:"pane"}); dqp.appendChild(el("div",{class:"pane-title"},"Data-quality summary"));
-  const dqt=el("table",{class:"data"}); dqt.appendChild(el("thead",{html:"<tr><th>Column</th><th>Type</th><th>Null %</th><th>Distinct</th></tr>"}));
-  const dqb=el("tbody"); r.dq.forEach(d=>dqb.appendChild(el("tr",{html:`<td><code>${esc(d.name)}</code></td><td><span class="badge muted">${d.type}</span></td><td>${d.nullPct}%</td><td>${d.distinct}</td>`}))); dqt.appendChild(dqb);
-  dqp.appendChild(el("div",{class:"scroll-x"},dqt)); split.appendChild(dqp);
-
-  const drp=el("div",{class:"pane"}); drp.appendChild(el("div",{class:"pane-title"},`Dropped rows · ${r.droppedCount}`));
-  if(!r.droppedCount) drp.appendChild(el("div",{class:"empty-hint"},"No rows dropped."));
-  else {
-    const dt=el("table",{class:"data"}); dt.appendChild(el("thead",{html:"<tr><th>Reason</th><th>Sample value</th></tr>"}));
-    const db=el("tbody"); r.dropped.slice(0,12).forEach(d=>{ const firstVal=Object.values(d.row).find(v=>v!=null); db.appendChild(el("tr",{html:`<td>${esc(d.rule)}</td><td><code>${esc(String(firstVal).slice(0,30))}</code></td>`})); }); dt.appendChild(db);
-    drp.appendChild(el("div",{class:"scroll-x"},dt));
-    if(r.droppedCount>12) drp.appendChild(el("p",{class:"page-sub",style:"margin-top:8px;"},`+ ${r.droppedCount-12} more (in the full report).`));
-  }
-  split.appendChild(drp); m.appendChild(split);
-
-  m.appendChild(el("div",{class:"row-between"},[
-    el("button",{class:"btn ghost",onclick:()=>{state.step=3;render();}},"← Back to rules"),
-    el("button",{class:"btn success lg",onclick:()=>{state.step=5;render();}},"Looks right · Publish →")
-  ]));
-}
-function tablePreview(rows, cols){
-  const wrap=el("div",{class:"scroll-x"}); const t=el("table",{class:"data"});
-  t.appendChild(el("thead",{html:"<tr>"+cols.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr>"}));
-  const tb=el("tbody"); rows.forEach(row=>tb.appendChild(el("tr",{html:cols.map(c=>`<td>${esc(row[c]==null?"":String(row[c]).slice(0,40))}</td>`).join("")}))); t.appendChild(tb);
-  wrap.appendChild(t); return wrap;
-}
-
-/* ---------- Step 5: Publish ---------- */
-function renderPublish(m){
-  const r=state.result, sc=state.spec.schema;
-  m.appendChild(el("h1",{class:"page-title"},"Publish & export"));
-  m.appendChild(el("p",{class:"page-sub"},"Save the schema to your library (so the next file refines it) and download the artifacts."));
-  m.appendChild(el("div",{class:"alert ok"},[ icon("ok"), el("div",{html:`Pipeline ready: <b>${r.keptCount.toLocaleString()}</b> clean rows into <code>${esc(sc.table)}</code> (${sc.columns.filter(c=>c.include).length} columns), <b>${r.droppedCount}</b> rows filtered.`}) ]));
-
-  const pane=el("div",{class:"pane"});
-  pane.appendChild(el("div",{class:"pane-title"},"Artifacts"));
-  const out=[
-    ["Cleaned data (CSV)", "Normalized, filtered, type-cast rows.", ()=>dl(sc.table+".csv", toCSV(r.rows,r.schemaCols), "text/csv")],
-    ["Cleaned data (JSON)", "Same rows as JSON records.", ()=>dl(sc.table+".json", JSON.stringify(r.rows,null,2), "application/json")],
-    ["Schema — SQL DDL", "CREATE TABLE statement.", ()=>dl(sc.table+".sql", buildDDL(sc), "text/plain")],
-    ["Schema — JSON", "Machine-readable column spec.", ()=>dl(sc.table+".schema.json", JSON.stringify(sc,null,2), "application/json")],
-    ["Pipeline spec (JSON)", "Re-runnable rule list.", ()=>dl(sc.table+".pipeline.json", JSON.stringify({sheet:state.spec.sheet,headerRow:state.spec.headerRow,rules:state.spec.rules.filter(x=>x.enabled),schema:sc},null,2), "application/json")],
-    ["Dropped-rows report (CSV)", "Every filtered row + reason.", ()=>{ const head="reason,"+Object.keys(r.dropped[0]?.row||{kept:1}).map(k=>`"${k}"`).join(","); const body=r.dropped.map(d=>`"${d.rule}",`+Object.values(d.row).map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")); dl(sc.table+".dropped.csv",[head,...body].join("\n"),"text/csv"); }],
-  ];
-  const og=el("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:10px;"});
-  out.forEach(([t,d,fn])=>og.appendChild(el("div",{class:"rule",style:"margin:0;"},[ el("div",{class:"body"},[el("div",{class:"rt"},t),el("div",{class:"impact"},d)]), el("button",{class:"btn secondary",onclick:fn},"Download") ])));
-  pane.appendChild(og); m.appendChild(pane);
-
-  m.appendChild(el("div",{class:"pane"},[ el("div",{class:"pane-title"},"Generated DDL"), el("div",{class:"code-block"},buildDDL(sc)) ]));
-
-  m.appendChild(el("div",{class:"row-between"},[
-    el("button",{class:"btn ghost",onclick:()=>{state.step=4;render();}},"← Back"),
-    el("div",{style:"display:flex;gap:10px;"},[
-      el("button",{class:"btn secondary",onclick:()=>{ saveToLibrary(sc); alert(`Schema “${sc.table}” saved to library. The next upload can refine it.`); }},"Save schema to library"),
-      el("button",{class:"btn success lg",onclick:()=>{ saveToLibrary(sc); dl(sc.table+".csv", toCSV(r.rows,r.schemaCols),"text/csv"); }},"Publish & download data")
+    el("div",{style:"display:flex;gap:10px"},[
+      el("button",{class:"btn secondary",onclick:saveMappings},"Save mappings to registry"),
+      el("button",{class:"btn primary lg",onclick:()=>{state.step=3;render();}},"Configure rules →")
     ])
   ]));
 }
-
-/* ---------- icons ---------- */
-function icon(kind){
-  const paths={ info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
-    warn:'<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
-    ok:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' };
-  return el("span",{html:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;">${paths[kind]}</svg>`}).firstChild;
+async function saveMappings(){
+  const confs=Object.entries(state.overrides).map(([source,entity])=>({source,entity}));
+  if(!confs.length){ alert("No confirmed mappings to save."); return; }
+  try{ const r=await api.confirm(confs); state.registry=r.entities; alert(`Saved ${confs.length} mappings. The registry now has ${r.entities.length} canonical entities (learned aliases persisted).`); }
+  catch(e){ alert("Save failed: "+e.message); }
 }
 
-/* ---------- boot ---------- */
-$("#reset-btn").addEventListener("click",()=>{ Object.assign(state,{step:0,fileName:null,workbook:null,profile:null,spec:null,result:null,refineBase:null}); $("#dataset-name").value=""; render(); });
-$("#dataset-name").addEventListener("change",e=>{ state.datasetName=e.target.value.trim(); if(state.spec) state.spec.schema.table=snake(e.target.value)||state.spec.schema.table; });
-renderLibrary();
-render();
+/* Step 3: Rules */
+function rRules(m){
+  m.appendChild(el("h1",{class:"page-title"},"Pipeline rules"));
+  m.appendChild(el("p",{class:"page-sub"},"Cleanup/filter/cast rules the backend proposed per sheet. Toggle off any you disagree with — they run inside the Dagster assets."));
+  const activeSheets=new Set();
+  state.unionGroups.filter(g=>state.groupsEnabled[g.table]).forEach(g=>g.members.forEach(mb=>activeSheets.add(mb)));
+  state.sheets.filter(s=>s.kind==="data"&&activeSheets.has(s.name)).forEach(s=>{
+    const pane=el("div",{class:"pane"});
+    pane.appendChild(el("div",{class:"pane-title"},`${s.name}`));
+    const rules=state.rulesBySheet[s.name]||[];
+    rules.forEach(r=>{
+      const card=el("div",{class:"rule"+(r.enabled?"":" off")});
+      card.appendChild(el("button",{class:"toggle"+(r.enabled?"":" off"),onclick:()=>{r.enabled=!r.enabled;reRender();}}));
+      const conf=r.confidence>=0.8?["ok","High"]:r.confidence>=0.6?["warn","Medium"]:["bad","Low"];
+      card.appendChild(el("div",{style:"flex:1"},[
+        el("div",{class:"rt"},r.title),
+        el("div",{style:"margin:3px 0"},[el("span",{class:"badge "+conf[0]},conf[1]),el("span",{class:"badge muted",style:"margin-left:4px"},r.kind.replace("_"," "))]),
+        r.why?el("div",{class:"why"},r.why):null,
+        el("div",{class:"spec"},JSON.stringify(r.spec))
+      ]));
+      pane.appendChild(card);
+    });
+    if(!rules.length) pane.appendChild(el("div",{class:"empty-hint"},"No rules proposed for this sheet."));
+    m.appendChild(pane);
+  });
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=2;render();}},"← Back"),
+    el("button",{class:"btn primary lg",onclick:runIngest},"Run Dagster pipeline →")
+  ]));
+}
+
+/* Step 4: Run */
+async function runIngest(){
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{},"Executing Dagster materialize() on the backend…")]));
+  const tables=state.unionGroups.filter(g=>state.groupsEnabled[g.table]).map(g=>({
+    table:g.table, members:g.members, overrides:state.overrides,
+    ruleOverrides:Object.fromEntries(g.members.map(mb=>[mb,(state.rulesBySheet[mb]||[])]))
+  }));
+  if(!tables.length){ alert("No tables enabled."); state.step=1; render(); return; }
+  try{ state.ingest=await api.ingest({fileId:state.fileId,tables}); state.step=4; render(); }
+  catch(e){ alert("Ingest failed: "+e.message); state.step=3; render(); }
+}
+function rRun(m){
+  const res=state.ingest;
+  m.appendChild(el("h1",{class:"page-title"},"Dagster run results"));
+  m.appendChild(el("p",{class:"page-sub"},"Each table was compiled to Dagster assets and materialized in-process. Nothing persisted until you export."));
+  if(!res){ m.appendChild(el("div",{class:"empty-hint"},"No run yet.")); return; }
+  res.tables.forEach(t=>{
+    const pane=el("div",{class:"pane"});
+    pane.appendChild(el("div",{style:"display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap"},[
+      el("span",{class:"pane-title",style:"margin:0"},`Table: ${t.table}`),
+      el("span",{class:"badge "+(t.dagsterRun.success?"ok":"bad")}, t.dagsterRun.success?"materialize ✓":"failed"),
+      el("span",{class:"badge info"},`${t.rowCount} rows`),
+      el("span",{class:"badge muted"},`${t.schema.columns.length} cols`)
+    ]));
+    t.dagsterRun.assets.forEach(a=>{
+      const md=a.metadata||{}; const bits=[];
+      if(md.row_count!=null)bits.push(`rows: ${md.row_count}`);
+      if(md.rows_kept!=null)bits.push(`kept ${md.rows_kept}/${md.rows_in}`);
+      if(md["dagster/column_schema"])bits.push(`schema: ${md["dagster/column_schema"].columns.length} cols`);
+      pane.appendChild(el("div",{class:"asset-card"},[el("span",{class:"badge ok"},"●"),el("span",{class:"k"},a.asset),el("span",{style:"color:var(--muted)"},bits.join(" · "))]));
+    });
+    const sc=t.schemaChange||{};
+    const scWrap=el("div",{style:"margin:10px 0"});
+    scWrap.appendChild(el("div",{class:"pane-title"},`Schema vs registry — ${sc.verdict||""}`));
+    (sc.known||[]).forEach(k=>scWrap.appendChild(el("span",{class:"chip",style:"border-color:#86efac;background:var(--ok-soft);color:var(--ok)"},k)));
+    (sc.new||[]).forEach(k=>scWrap.appendChild(el("span",{class:"chip",style:"border-color:#c4b5fd;background:var(--purple-soft);color:var(--purple)"},k+" (new)")));
+    pane.appendChild(scWrap);
+    pane.appendChild(el("div",{class:"pane-title"},"Cleaned output (first 6 rows)"));
+    pane.appendChild(tablePreview(t.rows.slice(0,6), t.schema.columns.map(c=>c.name)));
+    t.members.forEach(mb=>{
+      if(mb.rowsDropped>0||t.members.length>1){
+        pane.appendChild(el("div",{style:"font-size:12px;color:var(--muted);margin-top:10px"},`${mb.sheet}: ${mb.rowsKept}/${mb.rowsIn} kept, ${mb.rowsDropped} dropped`));
+        if(mb.dropped&&mb.dropped.length){
+          [...new Set(mb.dropped.map(d=>d.reason))].forEach(rz=>pane.appendChild(el("span",{class:"chip",style:"border-color:#fca5a5;background:var(--bad-soft);color:var(--bad)"},rz)));
+        }
+      }
+    });
+    m.appendChild(pane);
+  });
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=3;render();}},"← Back to rules"),
+    el("button",{class:"btn success lg",onclick:()=>{state.step=5;render();}},"Export →")
+  ]));
+}
+function tablePreview(rows,cols){
+  const wrap=el("div",{class:"scroll-x"}); const t=el("table",{class:"data"});
+  t.appendChild(el("thead",{html:"<tr>"+cols.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr>"}));
+  const tb=el("tbody"); rows.forEach(r=>tb.appendChild(el("tr",{html:cols.map(c=>`<td>${esc(r[c]==null?"":String(r[c]).slice(0,40))}</td>`).join("")}))); t.appendChild(tb);
+  wrap.appendChild(t); return wrap;
+}
+
+/* Step 5: Export */
+function rExport(m){
+  const res=state.ingest;
+  m.appendChild(el("h1",{class:"page-title"},"Export"));
+  m.appendChild(el("p",{class:"page-sub"},"Download artifacts per table. Pipeline spec is re-runnable; the schema is what Dagster materialized."));
+  res.tables.forEach(t=>{
+    const pane=el("div",{class:"pane"});
+    pane.appendChild(el("div",{class:"pane-title"},`${t.table} · ${t.rowCount} rows · ${t.schema.columns.length} cols`));
+    const cols=t.schema.columns.map(c=>c.name);
+    const outs=[
+      ["Cleaned data (CSV)",()=>dl(t.table+".csv",toCSV(t.rows,cols),"text/csv")],
+      ["Cleaned data (JSON)",()=>dl(t.table+".json",JSON.stringify(t.rows,null,2),"application/json")],
+      ["Schema — SQL DDL",()=>dl(t.table+".sql",t.ddl,"text/plain")],
+      ["Schema — JSON",()=>dl(t.table+".schema.json",JSON.stringify(t.schema,null,2),"application/json")],
+      ["Pipeline spec (JSON)",()=>dl(t.table+".pipeline.json",JSON.stringify({table:t.table,members:t.members.map(x=>x.sheet),schema:t.schema,schemaChange:t.schemaChange},null,2),"application/json")],
+      ["Dropped-rows report (CSV)",()=>{const rows=t.members.flatMap(mb=>(mb.dropped||[]).map(d=>`"${mb.sheet}","${String(d.reason).replace(/"/g,'""')}","${String(d.sample==null?"":d.sample).replace(/"/g,'""')}"`));dl(t.table+".dropped.csv",["sheet,reason,sample_value",...rows].join("\n"),"text/csv");}],
+    ];
+    const g=el("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:8px"});
+    outs.forEach(([lab,fn])=>g.appendChild(el("div",{class:"rule",style:"margin:0"},[el("div",{style:"flex:1"},el("div",{class:"rt"},lab)),el("button",{class:"btn secondary",onclick:fn},"Download")])));
+    pane.appendChild(g);
+    pane.appendChild(el("div",{class:"pane-title",style:"margin-top:12px"},"DDL"));
+    pane.appendChild(el("div",{class:"code-block"},t.ddl));
+    m.appendChild(pane);
+  });
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=4;render();}},"← Back"),
+    el("button",{class:"btn success lg",onclick:()=>{res.tables.forEach(t=>dl(t.table+".csv",toCSV(t.rows,t.schema.columns.map(c=>c.name)),"text/csv"));}},"Download all data")
+  ]));
+}
+function toCSV(rows,cols){
+  const head=cols.join(",");
+  const body=rows.map(r=>cols.map(c=>{let v=r[c];if(v==null)return"";v=String(v);return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;}).join(","));
+  return [head,...body].join("\n");
+}
+
+/* Offline fallback (preview only) */
+async function offlineParse(file){
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  if(typeof XLSX==="undefined"){ alert("Offline parser unavailable (SheetJS didn't load)."); return; }
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:"array",cellDates:true});
+  state.offline={name:file.name,sheets:wb.SheetNames.map(nm=>({name:nm,aoa:XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:null,blankrows:false})}))};
+  m.appendChild(el("h1",{class:"page-title"},"Offline preview"));
+  m.appendChild(el("div",{class:"alert warn"},[icon("warn"),el("div",{html:"Backend is down — this is a read-only preview (no entity matching, union, or Dagster execution). Start <code>run-backend.ps1</code> and re-upload for the full pipeline."})]));
+  state.offline.sheets.forEach(s=>{
+    const pane=el("div",{class:"pane"});
+    pane.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center"},[
+      el("div",{class:"pane-title",style:"margin:0"},`${s.name} · ${s.aoa.length} rows`),
+      el("button",{class:"btn secondary",onclick:()=>{const csv=s.aoa.map(r=>(r||[]).map(c=>{let v=c==null?"":String(c);return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;}).join(",")).join("\n");dl(s.name+".csv",csv,"text/csv");}},"Download CSV")
+    ]));
+    const wrap=el("div",{class:"scroll-x"}); const t=el("table",{class:"data"}); const tb=el("tbody");
+    s.aoa.slice(0,8).forEach(r=>tb.appendChild(el("tr",{html:(r||[]).slice(0,12).map(c=>`<td>${esc(c==null?"":String(c).slice(0,30))}</td>`).join("")})));
+    t.appendChild(tb); wrap.appendChild(t); pane.appendChild(wrap); m.appendChild(pane);
+  });
+  m.appendChild(el("div",{class:"row-between"},[el("button",{class:"btn ghost",onclick:()=>{state.step=0;render();}},"← Back"),el("button",{class:"btn secondary",onclick:async()=>{await checkHealth();if(state.backend.healthy)handleFile(file);else alert("Still down.");}},"Retry with backend")]));
+}
+
+function icon(kind){
+  const p={info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+    warn:'<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    ok:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'};
+  return el("span",{html:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">${p[kind]}</svg>`}).firstChild;
+}
+
+$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null});render();});
+$("#status").addEventListener("click",async()=>{const u=prompt("Backend URL:",state.backend.url);if(u){state.backend.url=u.trim().replace(/\/$/,"");localStorage.setItem(LS_URL,state.backend.url);await checkHealth();render();}});
+(async()=>{ await checkHealth(); render(); })();
 </script>
 </body>
 </html>
