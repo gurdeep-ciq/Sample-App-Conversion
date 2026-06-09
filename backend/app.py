@@ -15,6 +15,7 @@ can run without re-uploading. Pure heuristics + Dagster; no LLM calls.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import uuid
@@ -25,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import entities as E
+import mastering as M
 import profiling as P
 from dagster_pipeline import run_detail, run_history, run_table_pipeline
 
@@ -78,8 +80,9 @@ async def profile(file: UploadFile = File(...)):
     suffix = os.path.splitext(file.filename or "upload.xlsx")[1] or ".xlsx"
     fd, path = tempfile.mkstemp(suffix=suffix)
     try:
+        data = await file.read()
         with os.fdopen(fd, "wb") as f:
-            f.write(await file.read())
+            f.write(data)
         wb = P.profile_workbook(path, file.filename)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not read file: {e}")
@@ -88,6 +91,13 @@ async def profile(file: UploadFile = File(...)):
             os.remove(path)
         except OSError:
             pass
+
+    if not any(s["kind"] == "data" and s.get("_profile") for s in wb["sheets"]):
+        raise HTTPException(status_code=422,
+                            detail="No tabular data sheets found — the file looks empty or is all metadata/config.")
+    # Content hash makes ingest idempotent: the same bytes always land in the same
+    # warehouse partition (re-upload overwrites instead of duplicating).
+    wb["contentHash"] = hashlib.sha1(data).hexdigest()[:8]
 
     registry = E.load_registry()
     # attach entity matches per data sheet
@@ -127,8 +137,9 @@ def ingest(body: IngestBody):
         raise HTTPException(status_code=404, detail="Unknown fileId — re-run /profile.")
     registry = E.load_registry()
     by_name = {s["name"]: s for s in wb["sheets"]}
-    # each upload is one Dagster partition
-    upload_id = P.snake(wb.get("fileName", "upload")) + "_" + body.fileId[:6]
+    # each distinct file (by content hash) is one Dagster partition — re-uploading
+    # identical bytes overwrites the same partition instead of double-counting.
+    upload_id = P.snake(wb.get("fileName", "upload")) + "_" + wb.get("contentHash", body.fileId[:8])
 
     results = []
     for t in body.tables:
@@ -160,6 +171,35 @@ def runs():
 @app.get("/runs/{run_id}")
 def run(run_id: str):
     return run_detail(run_id)
+
+
+@app.get("/tables")
+def tables():
+    """Every persisted table in the warehouse with partition/row counts."""
+    return {"tables": M.list_tables()}
+
+
+@app.get("/tables/{name}")
+def table(name: str, limit: int = 500, enrich: bool = False):
+    """Unified rows for one table across all uploads (optionally enriched with
+    golden entity ids)."""
+    return M.read_table(name, limit=limit, enrich=enrich)
+
+
+@app.get("/master")
+def masters():
+    """Golden-record summary for every mastered entity."""
+    return {"entities": [{"entity": e, **{k: v for k, v in M.compute_master(e).items() if k != "records"}}
+                         for e in M.ENTITY_SPECS]}
+
+
+@app.get("/master/{entity}")
+def master(entity: str):
+    """Deduped golden records for one entity (customer / product / vendor),
+    reconciled across every uploaded format."""
+    if entity not in M.ENTITY_SPECS:
+        raise HTTPException(status_code=404, detail=f"Unknown entity '{entity}'.")
+    return M.compute_master(entity)
 
 
 if __name__ == "__main__":

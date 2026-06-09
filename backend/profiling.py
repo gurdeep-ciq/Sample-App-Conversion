@@ -168,7 +168,12 @@ def infer_column(values: list) -> dict:
         s = str(v).strip()
         return bool(_RE_CURRENCY.match(s) or _RE_CURRENCY2.match(s)) and not re.fullmatch(r"-?\d+", s)
 
-    isdate = _frac(vals, is_date) > 0.8
+    def is_bool(v):
+        return isinstance(v, bool) or (isinstance(v, str) and v.strip().lower() in
+                                       ("true", "false", "yes", "no", "y", "n", "t", "f"))
+
+    isbool = distinct <= 2 and _frac(vals, is_bool) > 0.9
+    isdate = (not isbool) and _frac(vals, is_date) > 0.8
     istime = (not isdate) and _frac(vals, is_time) > 0.8
     iscurr = _frac(vals, is_curr) > 0.6 or _frac(vals, lambda v: isinstance(v, str) and "$" in v) > 0.5
     numeric = _frac(vals, is_num) > 0.85
@@ -186,7 +191,9 @@ def infer_column(values: list) -> dict:
         and float(v).is_integer() and abs(v) >= 1e8 for v in vals)
     constant = distinct == 1
 
-    if isdate:
+    if isbool:
+        typ = "boolean"
+    elif isdate:
         typ = "date"
     elif istime:
         typ = "time"

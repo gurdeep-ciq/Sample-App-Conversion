@@ -85,6 +85,8 @@ def _type_bonus(entity: dict, col: dict) -> float:
         strong = col.get("leadingZero") or col.get("bigIntNum") or col.get("role") == "id"
         return 1.0 if strong else 0.8
     if exp == "text":
+        if ctype == "boolean":
+            return 0.4   # a yes/no flag is never a name/region/channel value
         return 1.0 if ctype == "string" else 0.8
     return 0.95
 
