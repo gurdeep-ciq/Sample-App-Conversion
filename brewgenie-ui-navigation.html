@@ -1,0 +1,2448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BrewGenie — UI Navigation Walkthrough</title>
+<style>
+  :root {
+    --ink: #0f172a;
+    --ink-soft: #334155;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --line-strong: #cbd5e1;
+    --bg: #ffffff;
+    --bg-alt: #f8fafc;
+    --bg-tinted: #f1f5f9;
+    --accent: #1e40af;
+    --accent-mid: #3b82f6;
+    --accent-soft: #dbeafe;
+    --accent-ink: #1e3a8a;
+    --ok: #166534;
+    --ok-soft: #dcfce7;
+    --warn: #92400e;
+    --warn-soft: #fef3c7;
+    --bad: #991b1b;
+    --bad-soft: #fee2e2;
+    --purple-soft: #ede9fe;
+    --purple: #6d28d9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg-alt);
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 14px;
+  }
+  .container { max-width: 1240px; margin: 0 auto; padding: 32px 24px 96px; }
+  .doc-header { padding-bottom: 24px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .doc-header .eyebrow {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--accent); font-weight: 600; margin-bottom: 8px;
+  }
+  .doc-header h1 {
+    font-size: 32px; margin: 0 0 8px 0; color: var(--ink);
+    font-weight: 700; letter-spacing: -0.02em;
+  }
+  .doc-header .sub { font-size: 17px; color: var(--muted); margin: 0; }
+
+  /* Sitemap */
+  .sitemap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin: 24px 0 40px;
+    padding: 20px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .sitemap a {
+    text-decoration: none;
+    color: var(--ink);
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg-alt);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.12s;
+  }
+  .sitemap a:hover { background: var(--accent-soft); border-color: var(--accent-mid); }
+  .sitemap a .n {
+    display: inline-flex; width: 22px; height: 22px;
+    background: var(--accent); color: white; border-radius: 50%;
+    align-items: center; justify-content: center; font-weight: 700; font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* Screen section */
+  section.screen { margin: 48px 0; scroll-margin-top: 24px; }
+  section.screen > .screen-head {
+    display: flex; gap: 14px; align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  section.screen .screen-num {
+    flex-shrink: 0;
+    width: 40px; height: 40px;
+    background: var(--accent); color: white;
+    border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+  }
+  section.screen .screen-title {
+    font-size: 22px; font-weight: 700;
+    margin: 0; color: var(--ink); letter-spacing: -0.01em;
+  }
+  section.screen .screen-purpose {
+    color: var(--muted); font-size: 14px; margin: 4px 0 0 0;
+  }
+
+  /* The app mockup itself */
+  .mockup {
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 18px 0 12px;
+    box-shadow: 0 4px 30px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+    background: white;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 56px 1fr;
+    min-height: 600px;
+  }
+  .mockup.tall { min-height: 720px; }
+  .mockup-top {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    background: white;
+    gap: 16px;
+  }
+  .mockup-logo {
+    font-size: 15px; font-weight: 700;
+    letter-spacing: -0.02em; color: var(--accent);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .mockup-logo svg { width: 18px; height: 18px; }
+  .breadcrumb { flex: 1; font-size: 13px; color: var(--muted); }
+  .breadcrumb a { color: var(--muted); text-decoration: none; }
+  .breadcrumb .sep { margin: 0 6px; color: var(--line-strong); }
+  .breadcrumb .current { color: var(--ink); font-weight: 500; }
+  .top-actions { display: flex; align-items: center; gap: 12px; }
+  .top-actions .icon-btn {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: var(--bg-alt); display: inline-flex;
+    align-items: center; justify-content: center; color: var(--muted);
+    cursor: pointer;
+  }
+  .top-actions .icon-btn svg { width: 16px; height: 16px; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white; display: inline-flex;
+    align-items: center; justify-content: center;
+    font-weight: 600; font-size: 12px;
+  }
+
+  /* Sidebar */
+  .mockup-sidebar {
+    border-right: 1px solid var(--line);
+    background: var(--bg-alt);
+    padding: 14px 12px;
+  }
+  .sidebar-section-label {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted);
+    margin: 14px 8px 6px 8px; font-weight: 600;
+  }
+  .sidebar-section-label:first-child { margin-top: 4px; }
+  .sidebar-nav { list-style: none; padding: 0; margin: 0; }
+  .sidebar-nav > li { margin: 2px 0; }
+  .sidebar-nav a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 6px;
+    font-size: 13px; color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .sidebar-nav a:hover { background: rgba(0,0,0,0.04); }
+  .sidebar-nav a.active {
+    background: var(--accent-soft); color: var(--accent-ink); font-weight: 600;
+  }
+  .sidebar-nav a svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  /* Main area */
+  .mockup-main {
+    padding: 22px 26px;
+    background: var(--bg);
+    overflow: auto;
+  }
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 18px; gap: 16px;
+  }
+  .page-title {
+    font-size: 20px; font-weight: 700;
+    margin: 0 0 4px 0; color: var(--ink); letter-spacing: -0.01em;
+  }
+  .page-sub { font-size: 13px; color: var(--muted); margin: 0; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 6px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; border: 1px solid transparent;
+    text-decoration: none; line-height: 1;
+  }
+  .btn.primary { background: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent-ink); }
+  .btn.secondary { background: white; color: var(--ink); border-color: var(--line-strong); }
+  .btn.success { background: var(--ok); color: white; }
+  .btn.danger { background: var(--bad); color: white; }
+  .btn.ghost { background: transparent; color: var(--ink-soft); }
+  .btn.lg { padding: 10px 18px; font-size: 14px; }
+  .btn svg { width: 14px; height: 14px; }
+
+  /* Stat cards */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin: 0 0 20px;
+  }
+  .stat-card {
+    background: white; border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 16px;
+  }
+  .stat-card .label {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted);
+    font-weight: 600; margin-bottom: 4px;
+  }
+  .stat-card .value {
+    font-size: 22px; font-weight: 700;
+    color: var(--ink); line-height: 1.1;
+  }
+  .stat-card .delta {
+    font-size: 12px; color: var(--ok); margin-top: 4px;
+  }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th {
+    text-align: left; background: var(--bg-tinted);
+    padding: 9px 14px; border-bottom: 1px solid var(--line);
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.04em; font-weight: 600; color: var(--muted);
+  }
+  .data-table td {
+    padding: 11px 14px; border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+  .data-table tbody tr:hover { background: var(--bg-alt); }
+  .data-table .name-cell {
+    font-weight: 600; color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .data-table .logo-blob {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: linear-gradient(135deg, #fda4af, #f43f5e);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 11px;
+  }
+  .data-table .logo-blob.b2 { background: linear-gradient(135deg, #a7f3d0, #10b981); }
+  .data-table .logo-blob.b3 { background: linear-gradient(135deg, #fde68a, #d97706); }
+  .data-table .logo-blob.b4 { background: linear-gradient(135deg, #ddd6fe, #8b5cf6); }
+  .data-table .logo-blob.b5 { background: linear-gradient(135deg, #bae6fd, #0284c7); }
+
+  /* Tabs */
+  .tab-bar {
+    display: flex; gap: 2px;
+    border-bottom: 1px solid var(--line);
+    margin: 0 0 18px 0;
+  }
+  .tab {
+    padding: 9px 14px; font-size: 13px;
+    color: var(--muted); border-bottom: 2px solid transparent;
+    cursor: pointer; text-decoration: none; font-weight: 500;
+  }
+  .tab.active {
+    color: var(--accent); border-bottom-color: var(--accent); font-weight: 600;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.02em; line-height: 1.4;
+  }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .badge.info { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.purple { background: var(--purple-soft); color: var(--purple); }
+  .badge.muted { background: var(--bg-tinted); color: var(--muted); }
+
+  /* Wizard breadcrumb */
+  .wizard {
+    display: flex; align-items: center;
+    background: var(--bg-alt); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 16px;
+    margin-bottom: 18px; font-size: 12px; gap: 4px;
+    flex-wrap: wrap;
+  }
+  .w-step {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--muted); padding: 0 8px;
+  }
+  .w-step .num {
+    display: inline-flex; width: 22px; height: 22px;
+    background: white; border: 1px solid var(--line-strong);
+    border-radius: 50%; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px;
+  }
+  .w-step.done { color: var(--ok); }
+  .w-step.done .num { background: var(--ok); color: white; border-color: var(--ok); }
+  .w-step.active { color: var(--accent); font-weight: 600; }
+  .w-step.active .num { background: var(--accent); color: white; border-color: var(--accent); }
+  .w-sep { color: var(--line-strong); margin: 0 2px; }
+
+  /* Annotations */
+  .annotations {
+    margin-top: 16px; padding: 18px 22px;
+    background: white; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 13px;
+  }
+  .annotations h4 {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted);
+    margin: 0 0 10px 0; font-weight: 600;
+  }
+  .annotations ul { margin: 0; padding-left: 20px; }
+  .annotations ul li { margin: 6px 0; color: var(--ink-soft); }
+  .annotations ul li b { color: var(--ink); }
+  .annotations ul li code {
+    background: var(--bg-tinted); padding: 1px 5px;
+    border-radius: 3px; font-size: 12px;
+    color: var(--accent-ink);
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--line-strong);
+    border-radius: 10px;
+    padding: 60px 40px;
+    text-align: center;
+    background: var(--bg-alt);
+  }
+  .drop-zone.hover { background: var(--accent-soft); border-color: var(--accent-mid); }
+  .drop-zone .icon {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin: 0 auto 12px;
+  }
+  .drop-zone .icon svg { width: 28px; height: 28px; }
+  .drop-zone h3 { margin: 0 0 8px 0; font-size: 18px; color: var(--ink); }
+  .drop-zone p { margin: 0; color: var(--muted); font-size: 13px; }
+  .drop-zone .formats {
+    margin-top: 16px;
+    display: inline-flex; gap: 6px;
+  }
+  .drop-zone .fmt {
+    padding: 3px 8px; background: white; border: 1px solid var(--line);
+    border-radius: 4px; font-size: 11px; color: var(--ink-soft);
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  /* Two-column split */
+  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .split-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .col-pane {
+    background: var(--bg-alt); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px;
+  }
+  .col-pane > .pane-title {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted);
+    margin: 0 0 10px 0; font-weight: 600;
+  }
+
+  /* AI suggestion card */
+  .ai-card {
+    background: white; border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; margin: 8px 0;
+  }
+  .ai-card.high { border-left: 3px solid var(--ok); }
+  .ai-card.med { border-left: 3px solid var(--warn); }
+  .ai-card.low { border-left: 3px solid var(--bad); }
+  .ai-card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .ai-card-head .label {
+    font-size: 13px; font-weight: 600; color: var(--ink);
+  }
+  .ai-card-head .label code {
+    background: var(--bg-tinted); padding: 1px 5px;
+    border-radius: 3px; font-size: 11px;
+    color: var(--accent-ink);
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .ai-card .descr { font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+  .ai-card .actions { display: flex; gap: 6px; }
+
+  /* Rule card (Screen 6) */
+  .rule-card {
+    background: white; border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 16px; margin: 10px 0;
+  }
+  .rule-card-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 8px;
+  }
+  .rule-card-title {
+    font-size: 14px; font-weight: 600; color: var(--ink);
+    margin: 0 0 4px 0;
+  }
+  .rule-card-meta {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .rule-card-body {
+    background: var(--bg-tinted); border-radius: 6px;
+    padding: 10px 12px; margin: 8px 0;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12px; color: var(--ink-soft);
+    border: 1px solid var(--line);
+  }
+  .rule-card-impact {
+    display: flex; gap: 18px; align-items: center;
+    font-size: 12px; color: var(--muted);
+    margin-top: 8px;
+  }
+  .rule-card-impact b { color: var(--bad); font-weight: 700; }
+  .rule-card-impact b.ok { color: var(--ok); }
+  .rule-card-actions {
+    display: flex; gap: 6px; margin-left: auto;
+  }
+  .icon-action {
+    width: 28px; height: 28px; border-radius: 5px;
+    background: var(--bg-alt); display: inline-flex;
+    align-items: center; justify-content: center; color: var(--muted);
+    border: 1px solid var(--line);
+    cursor: pointer; font-size: 13px;
+  }
+  .icon-action:hover { background: var(--accent-soft); color: var(--accent); }
+  .icon-action.danger:hover { background: var(--bad-soft); color: var(--bad); }
+
+  /* Mini code block */
+  .code-block {
+    background: #0f172a; color: #e2e8f0;
+    padding: 12px 14px; border-radius: 6px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11px; line-height: 1.6;
+    overflow-x: auto;
+  }
+  .code-block .kw { color: #c4b5fd; }
+  .code-block .str { color: #86efac; }
+  .code-block .num { color: #fcd34d; }
+  .code-block .com { color: #64748b; font-style: italic; }
+
+  /* Source file preview */
+  .file-preview {
+    background: white; border: 1px solid var(--line);
+    border-radius: 6px; overflow: hidden;
+    font-size: 11px;
+  }
+  .file-preview .filename {
+    padding: 8px 12px; background: var(--bg-tinted);
+    border-bottom: 1px solid var(--line);
+    font-family: "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+  }
+  .file-preview table {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+  }
+  .file-preview th {
+    background: white; padding: 6px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: left; font-weight: 600;
+    font-family: "SF Mono", Menlo, monospace;
+    color: var(--ink);
+  }
+  .file-preview td {
+    padding: 5px 10px; border-bottom: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .file-preview tr.highlight td { background: var(--accent-soft); }
+  .file-preview tr.drop td { background: var(--bad-soft); text-decoration: line-through; color: var(--muted); }
+
+  /* Schema mapping diagram */
+  .mapping-container {
+    display: grid; grid-template-columns: 1fr 60px 1fr; gap: 0;
+    align-items: stretch; background: var(--bg-alt);
+    border: 1px solid var(--line); border-radius: 8px; padding: 16px;
+  }
+  .mapping-col {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .mapping-col-label {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted);
+    font-weight: 600; margin-bottom: 6px;
+  }
+  .mapping-field {
+    background: white; border: 1px solid var(--line-strong);
+    border-radius: 5px; padding: 6px 10px;
+    font-size: 12px; color: var(--ink);
+    font-family: "SF Mono", Menlo, monospace;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .mapping-field.fact { border-left: 3px solid var(--accent); }
+  .mapping-field.dim { border-left: 3px solid var(--purple); }
+  .mapping-field .tag {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px;
+    font-family: inherit; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .mapping-field .tag.fact { background: var(--accent-soft); color: var(--accent-ink); }
+  .mapping-field .tag.dim { background: var(--purple-soft); color: var(--purple); }
+  .mapping-arrows svg { width: 100%; height: 100%; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before {
+    content: ""; position: absolute;
+    left: 8px; top: 4px; bottom: 4px; width: 2px;
+    background: var(--line-strong);
+  }
+  .timeline-item {
+    position: relative; padding: 8px 0 8px 0;
+    margin-bottom: 4px;
+  }
+  .timeline-item::before {
+    content: ""; position: absolute;
+    left: -20px; top: 12px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); border: 2px solid white;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .timeline-item.done::before { background: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+  .timeline-item .ts {
+    font-size: 11px; color: var(--muted);
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .timeline-item .desc { font-size: 13px; color: var(--ink); margin-top: 2px; }
+
+  /* Customer-view callout block */
+  .customer-view {
+    margin-top: 14px;
+    padding: 16px 22px;
+    background: #ecfeff;
+    border: 1px solid #67e8f9;
+    border-left: 4px solid #0891b2;
+    border-radius: 8px;
+  }
+  .customer-view h4 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #155e75;
+    margin: 0 0 10px 0;
+    font-weight: 700;
+  }
+  .customer-view h4 .persona {
+    font-weight: 500;
+    color: #0e7490;
+    margin-left: 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 12px;
+  }
+  .customer-view ul { margin: 0; padding-left: 20px; font-size: 13px; }
+  .customer-view ul li { margin: 6px 0; color: #155e75; }
+  .customer-view ul li b { color: #083344; }
+  .customer-view ul li code { background: white; padding: 1px 5px; border-radius: 3px; color: #0e7490; }
+  .customer-view .quote {
+    font-style: italic;
+    color: #0e7490;
+    padding: 8px 14px;
+    margin: 8px 0;
+    background: white;
+    border-left: 2px solid #67e8f9;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+
+  /* Two-modes intro band */
+  .modes-band {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 36px 0 28px;
+  }
+  .modes-band .mode-card {
+    padding: 18px 22px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: white;
+  }
+  .modes-band .mode-card.operator { border-left: 4px solid var(--accent); }
+  .modes-band .mode-card.customer { border-left: 4px solid #0891b2; background: #f0fdfa; }
+  .modes-band .mode-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 700; margin-bottom: 8px;
+  }
+  .modes-band .operator .mode-label { color: var(--accent); }
+  .modes-band .customer .mode-label { color: #0891b2; }
+  .modes-band h3 { margin: 0 0 8px 0; font-size: 18px; color: var(--ink); }
+  .modes-band p { margin: 0 0 4px 0; font-size: 13px; color: var(--ink-soft); }
+
+  /* Customer mockup style — different chrome to differentiate */
+  .mockup.customer-mockup {
+    border: 2px solid #0891b2;
+    box-shadow: 0 4px 30px rgba(8, 145, 178, 0.12);
+  }
+  .mockup.customer-mockup .mockup-logo { color: #0891b2; }
+  .mockup.customer-mockup .sidebar-nav a.active {
+    background: #cffafe; color: #155e75;
+  }
+
+  /* Chat-style rule input (customer view) */
+  .rule-chat {
+    background: linear-gradient(135deg, #ecfeff, #f0f9ff);
+    border: 1px solid #67e8f9;
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin: 16px 0 24px;
+  }
+  .rule-chat h4 {
+    font-size: 15px; color: #155e75;
+    margin: 0 0 4px 0; font-weight: 600;
+    text-transform: none; letter-spacing: 0;
+  }
+  .rule-chat p {
+    font-size: 13px; color: #0e7490;
+    margin: 0 0 14px 0;
+  }
+  .rule-chat .chat-input {
+    display: flex; gap: 8px; align-items: center;
+    background: white; border: 1.5px solid #67e8f9;
+    border-radius: 10px; padding: 4px 4px 4px 14px;
+  }
+  .rule-chat .chat-input input {
+    flex: 1; border: none; outline: none;
+    font-size: 14px; padding: 8px 0; background: transparent;
+  }
+  .rule-chat .chat-input input::placeholder { color: #94a3b8; }
+  .rule-chat .chat-input button {
+    background: #0891b2; color: white; border: none;
+    padding: 8px 18px; border-radius: 7px; font-size: 13px;
+    font-weight: 600; cursor: pointer;
+  }
+  .rule-chat .examples {
+    margin-top: 12px; font-size: 11px; color: #0e7490;
+  }
+  .rule-chat .examples b { font-weight: 600; color: #155e75; }
+  .rule-chat .examples .ex-chip {
+    display: inline-block; padding: 3px 10px;
+    background: white; border: 1px solid #67e8f9;
+    border-radius: 12px; margin: 2px 4px 2px 0;
+    color: #0e7490; cursor: pointer;
+  }
+
+  /* Customer-friendly rule toggle card */
+  .toggle-rule {
+    background: white; border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 18px; margin: 8px 0;
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .toggle-rule .toggle-switch {
+    width: 40px; height: 24px;
+    background: #0891b2; border-radius: 12px;
+    position: relative; flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .toggle-rule .toggle-switch::after {
+    content: ""; position: absolute;
+    width: 18px; height: 18px;
+    background: white; border-radius: 50%;
+    top: 3px; right: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .toggle-rule.off .toggle-switch { background: var(--line-strong); }
+  .toggle-rule.off .toggle-switch::after { right: auto; left: 3px; }
+  .toggle-rule .rule-text { flex: 1; }
+  .toggle-rule .rule-text .h {
+    font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;
+  }
+  .toggle-rule .rule-text .sub {
+    font-size: 12px; color: var(--muted); margin: 0;
+  }
+  .toggle-rule .badge-impact {
+    flex-shrink: 0; font-size: 11px; color: var(--muted);
+    background: var(--bg-tinted); padding: 3px 8px;
+    border-radius: 12px; align-self: center;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  /* Comparison table at the end */
+  .compare-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: white; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.06);
+    margin: 16px 0;
+  }
+  .compare-table th {
+    text-align: left; padding: 14px 18px;
+    background: var(--bg-tinted);
+    font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 700; color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .compare-table th.op-col { color: var(--accent); }
+  .compare-table th.cust-col { color: #0891b2; }
+  .compare-table td {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .compare-table tbody tr:last-child td { border-bottom: none; }
+  .compare-table td:first-child {
+    font-weight: 600; color: var(--ink); width: 18%;
+  }
+
+  /* Print */
+  @media print {
+    body { background: white; }
+    section.screen { page-break-inside: avoid; }
+    .mockup { box-shadow: none; }
+  }
+  @media (max-width: 900px) {
+    .mockup { grid-template-columns: 56px 1fr; }
+    .sidebar-nav a span.lbl { display: none; }
+    .sidebar-section-label { display: none; }
+    .split-2 { grid-template-columns: 1fr; }
+    .mapping-container { grid-template-columns: 1fr; }
+    .mapping-arrows { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<header class="doc-header">
+  <div class="eyebrow">UI Navigation Walkthrough · companion to architecture-v2 (with v3 deltas noted)</div>
+  <h1>BrewGenie — Screen-by-Screen</h1>
+  <p class="sub">Nine static mockups showing how the operator moves from "blank slate" to "live pipeline" — and exactly where the business rules live.</p>
+</header>
+
+<!-- ============================================================ -->
+<!-- v3 DELTA BANNER (May 11 Shyam review) -->
+<!-- ============================================================ -->
+<div style="margin: 24px 0 8px; padding: 20px 24px; border-radius: 10px;
+     background: linear-gradient(135deg, #f0fdfa, #ecfeff);
+     border: 1.5px solid #0891b2; border-left: 4px solid #0891b2;">
+  <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #0e7490; font-weight: 700; margin-bottom: 8px;">
+    ⚙️  v3 UI deltas (from May 11 review with Shyam — see brewgenie-architecture-v3.html)
+  </div>
+  <p style="margin: 0 0 10px; font-size: 14px; color: #155e75;">
+    The screens below are <strong>v2 mockups</strong>. After the May 11 review, the following UI changes are locked in for v3. Screens will be re-rendered in a follow-up doc.
+  </p>
+  <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #155e75; line-height: 1.7;">
+    <li><strong>Screen 1 (Dashboard):</strong> Remove the <code style="background:white;padding:1px 5px;border-radius:3px;font-size:12px;font-family:'SF Mono',monospace;">+ New Customer</code> button. Customer creation lives in BevGenie / ConsumerIQ only. BrewGenie only searches/lists existing customers.</li>
+    <li><strong>Wizard breadcrumb:</strong> 6 steps → <strong>7 steps</strong>. New order: <em>Upload · Classify · Template · Configure · Master · Dry-run · Publish</em>. Classify (AI) is the new step 2; Master entities (mastering service) is the new step 5.</li>
+    <li><strong>New screen between Upload and current "Profile":</strong> <em>Classification</em> — Claude returns the data category (1 of 14) plus confidence; operator confirms or overrides from a dropdown.</li>
+    <li><strong>New screen between Configure and Dry-run:</strong> <em>Mastering Review Queue</em> — operator confirms low-confidence entity matches (brand, account, person, distributor) or creates new global golden records.</li>
+    <li><strong>Screen 6 (Rules):</strong> reframe from "Sera Luce schema" to <em>"Component templates"</em>. The five rule tabs (Universal / Filter / Transform / Alias / Custom) survive, but they're now scoped to the <em>component template</em> for the standardize step, not the whole pipeline.</li>
+    <li><strong>Screen 9 (Pipeline Monitor):</strong> Remove <code style="background:white;padding:1px 5px;border-radius:3px;font-size:12px;font-family:'SF Mono',monospace;">Open in Dagster ↗</code> button. BrewGenie's UI <em>is</em> Dagster (forked open-source UI with our skin). Add inline DQ summary widget showing per-step null rates and anomaly counts.</li>
+    <li><strong>New Sidebar item:</strong> <em>Template Library</em> — browse + edit specific templates (per-vendor-per-category) and the underlying component templates.</li>
+    <li><strong>Vocabulary:</strong> "distributor" → "data vendor" wherever it's not literally about a beer-wholesaling distributor (the table, the search filter, the breadcrumb).</li>
+    <li><strong>Env labels:</strong> "Amber Tree" → "Staging (Amber Tree)" · "Supabase prod" → "Production (Supabase)" wherever environment labels appear.</li>
+  </ul>
+  <p style="margin: 12px 0 0; font-size: 12px; color: #0e7490; font-style: italic;">
+    Below is the v2 walkthrough preserved as-is for reference — it still shows the operator/customer view dichotomy and the rule-editor design intent, both of which carry over to v3.
+  </p>
+</div>
+
+<!-- SITEMAP -->
+<div class="sitemap">
+  <a href="#s1"><span class="n">1</span><span>Dashboard · Customers</span></a>
+  <a href="#s2"><span class="n">2</span><span>Customer Detail</span></a>
+  <a href="#s3"><span class="n">3</span><span>Upload Sample</span></a>
+  <a href="#s4"><span class="n">4</span><span>AI Introspection</span></a>
+  <a href="#s5"><span class="n">5</span><span>Schema Mapping</span></a>
+  <a href="#s6"><span class="n">6</span><span>Rules Editor ★</span></a>
+  <a href="#s7"><span class="n">7</span><span>Dry-Run</span></a>
+  <a href="#s8"><span class="n">8</span><span>Publish</span></a>
+  <a href="#s9"><span class="n">9</span><span>Pipeline Monitor</span></a>
+</div>
+
+<!-- ============================================================ -->
+<!-- TWO-MODES INTRO -->
+<!-- ============================================================ -->
+<div class="modes-band">
+  <div class="mode-card operator">
+    <div class="mode-label">
+      <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/></svg>
+      Operator view
+    </div>
+    <h3>For Twenty20 staff onboarding new customers</h3>
+    <p>Full chrome — every control visible, including confidence scores, fact/dim tags, dry-run row counts, audit trail links. Used during the white-glove onboarding phase (first 5-10 customers).</p>
+  </div>
+  <div class="mode-card customer">
+    <div class="mode-label">
+      <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M4 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Customer view
+    </div>
+    <h3>For non-technical founders running their own pipelines</h3>
+    <p>Same six steps, simplified language. Rules become plain-English toggles. Schema mapping is hidden unless something needs human judgment. Goal: a founder like Justin can self-serve in &lt; 30 min.</p>
+  </div>
+</div>
+
+<p style="font-size:13px; color:var(--muted); margin: 0 0 36px; padding: 12px 16px; background: var(--bg-tinted); border-radius: 6px;">
+  <b style="color: var(--ink);">Same routes, same backend, same publish action.</b>
+  The difference is a feature flag at the user level (<code style="background:white; padding:1px 5px; border-radius:3px; font-size:12px;">user.role = 'customer' | 'operator'</code>) that swaps chrome and copy.
+  Each screen below shows the operator view with a teal callout describing what changes for the customer.
+</p>
+
+<!-- ============================================================ -->
+<!-- SCREEN 1: DASHBOARD -->
+<!-- ============================================================ -->
+<section class="screen" id="s1">
+  <div class="screen-head">
+    <div class="screen-num">1</div>
+    <div>
+      <h2 class="screen-title">Dashboard — Customer List</h2>
+      <p class="screen-purpose">Operator's home. See every customer's pipeline status at a glance, find the one to work on, or create a new one.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <!-- TOP BAR -->
+    <div class="mockup-top">
+      <div class="mockup-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg>
+        BrewGenie
+      </div>
+      <div class="breadcrumb"><span class="current">Customers</span></div>
+      <div class="top-actions">
+        <span class="icon-btn" title="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        </span>
+        <span class="avatar">AK</span>
+      </div>
+    </div>
+    <!-- SIDEBAR -->
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="lbl">Customers</span>
+        </a></li>
+        <li><a href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/></svg>
+          <span class="lbl">Distributors</span>
+        </a></li>
+        <li><a href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span class="lbl">Rules Library</span>
+        </a></li>
+        <li><a href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span class="lbl">Pipelines</span>
+        </a></li>
+      </ul>
+      <div class="sidebar-section-label">Admin</div>
+      <ul class="sidebar-nav">
+        <li><a href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span class="lbl">Audit Log</span>
+        </a></li>
+        <li><a href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="lbl">Settings</span>
+        </a></li>
+      </ul>
+    </div>
+    <!-- MAIN -->
+    <div class="mockup-main">
+      <div class="page-header">
+        <div>
+          <h3 class="page-title">Customers</h3>
+          <p class="page-sub">5 active · 1 onboarding · 2 historical</p>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn secondary">Filter</button>
+          <button class="btn primary">+ New Customer</button>
+        </div>
+      </div>
+      <div class="tab-bar">
+        <a class="tab active">All <span style="opacity:0.6">· 8</span></a>
+        <a class="tab">Active <span style="opacity:0.6">· 5</span></a>
+        <a class="tab">Onboarding <span style="opacity:0.6">· 1</span></a>
+        <a class="tab">Historical <span style="opacity:0.6">· 2</span></a>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Slug</th>
+            <th>Distributors</th>
+            <th>Last activity</th>
+            <th>Net rev (YTD)</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob">SL</span>Sera Luce</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">sera-luce</code></td>
+            <td>6 active</td>
+            <td>2 hours ago</td>
+            <td>$838,985</td>
+            <td><span class="badge ok">Active</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b2">RB</span>Roosevelt Beverage</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">roosevelt-beverage</code></td>
+            <td>3 active</td>
+            <td>1 day ago</td>
+            <td>$412,300</td>
+            <td><span class="badge ok">Active</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b3">DH</span>Dogwood Hills Brewing</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">dogwood-hills</code></td>
+            <td>4 active · 1 draft</td>
+            <td>4 hours ago</td>
+            <td>$1,205,440</td>
+            <td><span class="badge ok">Active</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b4">NV</span>Northwest Valley Co.</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">northwest-valley</code></td>
+            <td>2 draft</td>
+            <td>15 min ago</td>
+            <td>—</td>
+            <td><span class="badge warn">Onboarding</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b5">CB</span>Cascade Brewing</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">cascade-brewing</code></td>
+            <td>5 active</td>
+            <td>11 hours ago</td>
+            <td>$649,200</td>
+            <td><span class="badge ok">Active</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b2">FB</span>Foglight Brewing</div></td>
+            <td><code style="font-size:11px; color:var(--muted)">foglight-brewing</code></td>
+            <td>2 active</td>
+            <td>2 days ago</td>
+            <td>$197,000</td>
+            <td><span class="badge ok">Active</span></td>
+            <td><span class="icon-action">›</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Sidebar nav</b> — five top-level destinations. <code>Customers</code> is the home; <code>Rules Library</code> is where reusable rules across customers live (e.g., universal zero-qty filter).</li>
+      <li><b>Status badge</b> — green <em>Active</em> means at least one pipeline ran successfully in the last 7 days; amber <em>Onboarding</em> means a customer exists but no distributor has been published yet.</li>
+      <li><b>Last activity</b> — derived from Dagster run history (read via GraphQL), not from when the BrewGenie row was edited.</li>
+      <li><b>Net rev (YTD)</b> — pulled from the customer's <code>&lt;slug&gt;.fact_distributor_orders</code> for the current year. Confirms the pipeline is actually producing useful data.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— Justin (Sera Luce founder)</span></h4>
+    <ul>
+      <li><b>No customer list.</b> Justin signs in and lands directly on his own org. He never sees other Twenty20 customers.</li>
+      <li><b>Page title:</b> <em>"Sera Luce Data Sources"</em> — not "Customers".</li>
+      <li><b>Sidebar reduces to three items:</b> <code>Data Sources</code>, <code>Data Health</code>, <code>Settings</code>. No Rules Library, no Audit Log, no Pipelines section (renamed inside Data Health).</li>
+      <li><b>Empty state if no distributors yet:</b> single big card with <em>"Add your first sales source"</em> CTA. No noise.</li>
+    </ul>
+    <div class="quote">"This screen doesn't exist for me — I land straight on my Sera Luce page after sign-in."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 2: CUSTOMER DETAIL -->
+<!-- ============================================================ -->
+<section class="screen" id="s2">
+  <div class="screen-head">
+    <div class="screen-num">2</div>
+    <div>
+      <h2 class="screen-title">Customer Detail — Sera Luce</h2>
+      <p class="screen-purpose">Everything about one customer: their distributors, files, pipelines, and customer-specific rules.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg>
+        BrewGenie
+      </div>
+      <div class="breadcrumb">
+        <a href="#">Customers</a> <span class="sep">›</span> <span class="current">Sera Luce</span>
+      </div>
+      <div class="top-actions">
+        <span class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+        <span class="avatar">AK</span>
+      </div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span class="lbl">Distributors</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg><span class="lbl">Rules Library</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span class="lbl">Pipelines</span></a></li>
+      </ul>
+      <div class="sidebar-section-label">Admin</div>
+      <ul class="sidebar-nav">
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="lbl">Audit Log</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg><span class="lbl">Settings</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <!-- Customer header -->
+      <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:20px;">
+        <div style="width:56px; height:56px; border-radius:10px; background:linear-gradient(135deg, #fda4af, #f43f5e); color:white; font-weight:700; font-size:20px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">SL</div>
+        <div style="flex:1;">
+          <h3 class="page-title" style="margin-bottom:6px;">Sera Luce</h3>
+          <div style="display:flex; gap:14px; align-items:center; font-size:12px; color:var(--muted); flex-wrap:wrap;">
+            <span>slug: <code style="background:var(--bg-tinted); padding:1px 5px; border-radius:3px;">sera-luce</code></span>
+            <span>inbox: <code style="background:var(--bg-tinted); padding:1px 5px; border-radius:3px;">seraluce@bevgenie.space</code></span>
+            <span>schema: <code style="background:var(--bg-tinted); padding:1px 5px; border-radius:3px;">sera_luce</code></span>
+            <span class="badge ok">Active</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn secondary">View in Dagster</button>
+          <button class="btn primary">+ Add Distributor</button>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Distributors</div>
+          <div class="value">6</div>
+          <div class="delta">+1 in last 90 days</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Net rev (lifetime)</div>
+          <div class="value">$838,985</div>
+          <div class="delta">+$112k MoM</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Fact rows</div>
+          <div class="value">5,758</div>
+          <div class="delta">+30 last load</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Months covered</div>
+          <div class="value">78</div>
+          <div class="delta">Oct 2019 → today</div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <a class="tab active">Distributors</a>
+        <a class="tab">Files</a>
+        <a class="tab">Pipelines</a>
+        <a class="tab">Activity</a>
+        <a class="tab">Rules</a>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Distributor</th>
+            <th>NBWA</th>
+            <th>States</th>
+            <th>Last run</th>
+            <th>Rows last load</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b2">AV</span>Artisans &amp; Vines</div></td>
+            <td><span class="badge muted">—</span></td>
+            <td>DC · MD · VA</td>
+            <td>2 hr ago</td>
+            <td>30</td>
+            <td><span class="badge ok">Active · flagship</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b3">VI</span>Vintage Imports</div></td>
+            <td><span class="badge info">Linked</span></td>
+            <td>PA · NJ · DE</td>
+            <td>5 hr ago</td>
+            <td>147</td>
+            <td><span class="badge warn">Active · sunsetting</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b4">CW</span>Curated Wine Group</div></td>
+            <td><span class="badge muted">—</span></td>
+            <td>SC</td>
+            <td>2 days ago</td>
+            <td>58</td>
+            <td><span class="badge ok">Active</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b5">PL</span>PAL <span style="font-weight:400; color:var(--muted); margin-left:4px;">(Square POS)</span></div></td>
+            <td><span class="badge muted">—</span></td>
+            <td>PA</td>
+            <td>4 hr ago</td>
+            <td>89</td>
+            <td><span class="badge ok">Active</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob">BN</span>Banville</div></td>
+            <td><span class="badge muted">—</span></td>
+            <td>DC · VA · MD</td>
+            <td>Jul 2024</td>
+            <td>—</td>
+            <td><span class="badge muted">Historical (closed)</span></td>
+          </tr>
+          <tr>
+            <td><div class="name-cell"><span class="logo-blob b3">OR</span>Orsini</div></td>
+            <td><span class="badge muted">—</span></td>
+            <td>NC</td>
+            <td>Nov 2025</td>
+            <td>—</td>
+            <td><span class="badge muted">Historical (closed)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Customer header card</b> shows the three things operators need most: the <code>slug</code> (used as schema name), the email alias (where customers forward files), and the Postgres schema name.</li>
+      <li><b>Stat cards</b> read live from <code>sera_luce.fact_distributor_orders</code> and <code>sera_luce.account_master</code>. Numbers shown match production today (locked baseline for the parity test in P9).</li>
+      <li><b>Distributors table</b> — each row is a <code>platform.organization_distributors</code> entry. NBWA "Linked" badge means we have an <code>nbwa_distributor_id</code> canonicalization (Vintage Imports matches NBWA #1842).</li>
+      <li><b>The Rules tab</b> at far right is where customer-level rules live (vs distributor-level rules which live on the distributor detail page).</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— Justin's home screen</span></h4>
+    <ul>
+      <li><b>Page renamed</b> from "Customer Detail" to <em>"My Sales Sources"</em>. Breadcrumb is just the org logo, no parent path.</li>
+      <li><b>Stat-card labels softened:</b> "Distributors" → <em>"Sales Sources"</em>, "Net rev (lifetime)" → <em>"Total tracked"</em>, "Fact rows" → <em>"Transactions on record"</em>, "Months covered" → <em>"Data going back to..."</em></li>
+      <li><b>Distributors table renamed</b> <em>"Where your sales come from"</em>. NBWA badges hidden by default (operator-only nuance). "Last run" → <em>"Last update"</em>. "Status" simplified to green/yellow/red dot.</li>
+      <li><b>Tabs reduced to three:</b> <code>Sources</code>, <code>Recent files</code>, <code>Data Health</code>. No separate Rules tab — rules live inside each source.</li>
+      <li><b>No "View in Dagster" button.</b> Customer never knows Dagster exists.</li>
+    </ul>
+    <div class="quote">"I see my 6 distributors with green dots and the total revenue I've tracked. That's all I need on this page."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 3: UPLOAD SAMPLE -->
+<!-- ============================================================ -->
+<section class="screen" id="s3">
+  <div class="screen-head">
+    <div class="screen-num">3</div>
+    <div>
+      <h2 class="screen-title">Add Distributor — Step 1: Upload Sample</h2>
+      <p class="screen-purpose">Drag a real distributor file in. BrewGenie wants actual data — not a synthetic schema description.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Customers</a> <span class="sep">›</span> <a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">Add Distributor</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span class="lbl">Distributors</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg><span class="lbl">Rules Library</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span class="lbl">Pipelines</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <h3 class="page-title">Add a new distributor for Sera Luce</h3>
+
+      <!-- WIZARD -->
+      <div class="wizard">
+        <span class="w-step active"><span class="num">1</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">2</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">3</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">4</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">5</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">6</span>Publish</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 320px; gap:20px;">
+        <div>
+          <div class="drop-zone hover">
+            <div class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <h3>Drop a sample file or click to browse</h3>
+            <p>BrewGenie reads the first 5,000 rows. Bigger files OK — only the sample is uploaded for AI introspection.</p>
+            <div class="formats">
+              <span class="fmt">.xlsx</span>
+              <span class="fmt">.csv</span>
+              <span class="fmt">.pdf</span>
+              <span class="fmt">.eml</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="col-pane">
+            <div class="pane-title">Distributor info</div>
+            <div style="margin-bottom:12px;">
+              <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Name</label>
+              <input style="width:100%; padding:7px 10px; border:1px solid var(--line-strong); border-radius:5px; font-size:13px;" value="Republic National Distributing — PA"/>
+            </div>
+            <div style="margin-bottom:12px;">
+              <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">NBWA reference</label>
+              <div style="padding:7px 10px; border:1px solid var(--line); border-radius:5px; font-size:12px; background:var(--bg-alt); display:flex; align-items:center; justify-content:space-between;">
+                <span><b>RNDC</b> · Pittsburgh, PA</span>
+                <span class="badge info">Suggested</span>
+              </div>
+              <div style="font-size:11px; color:var(--muted); margin-top:4px;">From <code style="background:var(--bg-tinted); padding:1px 4px; border-radius:3px;">market_intel.nbwa_distributors</code> · 95% match</div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">States (territory)</label>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <span class="badge info">PA</span>
+                <span class="badge info">+</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-pane" style="margin-top:12px;">
+            <div class="pane-title">Tips</div>
+            <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.7;">
+              <li>Use the most recent month's file — schemas drift slowly.</li>
+              <li>Drop any sheets you know are non-data (invoices, summaries).</li>
+              <li>Files stay in tenant-scoped Supabase Storage, deleted after publish.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:24px;">
+        <button class="btn ghost">← Back</button>
+        <button class="btn primary">Continue to AI introspection →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Wizard breadcrumb</b> persists across screens 3–8. Step indicator + step name. Click to jump back to any completed step.</li>
+      <li><b>NBWA reference suggestion</b> is auto-populated from a fuzzy match against the 1,105-distributor registry. Operator can override.</li>
+      <li><b>States field</b> drives the universal "out-of-state row drop" rule (see Screen 6). Multi-select chips.</li>
+      <li><b>5,000-row cap</b> keeps the AI introspection step under budget. Production pipeline reads the full file later.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— "Add a sales source"</span></h4>
+    <ul>
+      <li><b>Page title:</b> <em>"Add a sales source"</em> instead of "Add Distributor". The word <em>distributor</em> only appears once, in the helper text.</li>
+      <li><b>Helper text:</b> <em>"Forward us one month's sales report from your distributor. We'll figure out the format and set up automatic processing."</em></li>
+      <li><b>NBWA badge:</b> still surfaces but framed as <em>"We think we recognize this distributor — confirm?"</em>. The technical detail (NBWA ID, registry source) is hidden in a small "?" tooltip.</li>
+      <li><b>States field:</b> renamed <em>"Which states does this distributor cover?"</em>. Same multi-select chips, friendlier prompt.</li>
+      <li><b>"Continue" button text:</b> <em>"Let our AI take a look →"</em> instead of "Continue to AI introspection".</li>
+    </ul>
+    <div class="quote">"Drop my Artisans file in, tell BrewGenie which states they cover. That's it for this screen."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 4: AI INTROSPECTION -->
+<!-- ============================================================ -->
+<section class="screen" id="s4">
+  <div class="screen-head">
+    <div class="screen-num">4</div>
+    <div>
+      <h2 class="screen-title">Step 2: AI Introspection</h2>
+      <p class="screen-purpose">Claude profiles the file and proposes structure + candidate rules. Operator skims and approves.</p>
+    </div>
+  </div>
+
+  <div class="mockup tall">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Customers</a> <span class="sep">›</span> <a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">Add Distributor · RNDC</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span class="lbl">Distributors</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg><span class="lbl">Rules Library</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div class="wizard">
+        <span class="w-step done"><span class="num">✓</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step active"><span class="num">2</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">3</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">4</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">5</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">6</span>Publish</span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:12px; padding:10px 14px; background:var(--accent-soft); border:1px solid #93c5fd; border-radius:8px; margin-bottom:18px;">
+        <svg style="width:18px; height:18px; color:var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L8 11l-6 1 4.5 4.5L5 23l7-4 7 4-1.5-6.5L22 12l-6-1L12 2z"/></svg>
+        <span style="font-size:13px; color:var(--accent-ink);"><b>Claude analyzed 4,127 rows across 8 columns in 42 seconds.</b> 12 candidate rules generated. Confidence high on most; review medium/low ones below.</span>
+      </div>
+
+      <div class="split-2">
+        <div class="col-pane">
+          <div class="pane-title">Source file preview · 020226 RNDC PA Depletions.xlsx</div>
+          <div class="file-preview">
+            <div class="filename">Sheet: "Feb 2026 Depletions"</div>
+            <table>
+              <thead>
+                <tr><th>CustName</th><th>State</th><th>Sold</th><th>Item</th><th>FOB</th><th>Division</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Beer Den</td><td>PA</td><td>3</td><td>Spritz Case</td><td>$58.00</td><td>Off Premise</td></tr>
+                <tr><td>Tony's Tap</td><td>PA</td><td>2</td><td>Spritz Case</td><td>$58.00</td><td>On Premise</td></tr>
+                <tr><td>Reed Plaza Liquor</td><td>PA</td><td>5</td><td>Spritz Case</td><td>$58.00</td><td>Off Premise</td></tr>
+                <tr class="drop"><td>EmployeeX</td><td>PA</td><td>1</td><td>Spritz Case</td><td>$0.00</td><td>SalesRep</td></tr>
+                <tr><td>Beer Trove</td><td>PA</td><td>4</td><td>Spritz Keg</td><td>$140.00</td><td>On Premise</td></tr>
+                <tr class="drop"><td>—</td><td>PA</td><td>0</td><td>Spritz Case</td><td>—</td><td>Off Premise</td></tr>
+                <tr><td>Wine &amp; Spirit Co</td><td>PA</td><td>2</td><td>Spritz Case</td><td>$58.00</td><td>Off Premise</td></tr>
+                <tr class="drop"><td>Beer Den</td><td>NY</td><td>1</td><td>Spritz Case</td><td>$58.00</td><td>Off Premise</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:11px; color:var(--muted); margin-top:8px;">
+            Rows highlighted red are dropped by AI-suggested filter rules. Click any row to inspect why.
+          </div>
+        </div>
+
+        <div class="col-pane">
+          <div class="pane-title">Claude's suggestions</div>
+
+          <div class="ai-card high">
+            <div class="ai-card-head">
+              <div class="label">Format detected: <code>xlsx-monthly-depletion</code></div>
+              <span class="badge ok">95% confidence</span>
+            </div>
+            <div class="descr">Single sheet per month. Anchor column for transactions: <code>Sold</code>. Matches Vintage Imports pattern.</div>
+          </div>
+
+          <div class="ai-card high">
+            <div class="ai-card-head">
+              <div class="label">Filter: drop <code>Division ∈ {SalesRep, Employee}</code></div>
+              <span class="badge ok">High</span>
+            </div>
+            <div class="descr">8 rows match this in the sample. All have customer name "Employee*" or "—".</div>
+            <div class="actions">
+              <button class="btn secondary" style="padding:4px 10px; font-size:12px;">✓ Accept</button>
+              <button class="btn ghost" style="padding:4px 10px; font-size:12px;">Edit</button>
+            </div>
+          </div>
+
+          <div class="ai-card high">
+            <div class="ai-card-head">
+              <div class="label">Filter: drop <code>State ∉ {PA}</code></div>
+              <span class="badge ok">High</span>
+            </div>
+            <div class="descr">3 rows show NY/OH/MD — outside territory.</div>
+            <div class="actions">
+              <button class="btn secondary" style="padding:4px 10px; font-size:12px;">✓ Accept</button>
+              <button class="btn ghost" style="padding:4px 10px; font-size:12px;">Edit</button>
+            </div>
+          </div>
+
+          <div class="ai-card med">
+            <div class="ai-card-head">
+              <div class="label">Pricing: <code>FOB</code> column has revenue per unit</div>
+              <span class="badge warn">Medium</span>
+            </div>
+            <div class="descr">Unit price varies $58–$140 across rows. Check: Sold × FOB = net revenue?</div>
+            <div class="actions">
+              <button class="btn secondary" style="padding:4px 10px; font-size:12px;">✓ Confirm</button>
+              <button class="btn ghost" style="padding:4px 10px; font-size:12px;">Different</button>
+            </div>
+          </div>
+
+          <div class="ai-card low">
+            <div class="ai-card-head">
+              <div class="label">Possible alias: <code>"Beer Den" ↔ "BEER DEN INC"</code></div>
+              <span class="badge bad">Low</span>
+            </div>
+            <div class="descr">Existing customer in another distributor's data — might be the same account. Operator confirm.</div>
+            <div class="actions">
+              <button class="btn secondary" style="padding:4px 10px; font-size:12px;">✓ Merge</button>
+              <button class="btn ghost" style="padding:4px 10px; font-size:12px;">Keep separate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:20px;">
+        <button class="btn ghost">← Back</button>
+        <button class="btn primary">Accept all high-confidence · Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Side-by-side layout</b> — operator sees the source data on the left and AI's interpretation on the right. Highlighted rows in the file preview show what each rule would drop.</li>
+      <li><b>Confidence badges</b> — high (green) is auto-acceptable; medium (amber) needs a quick check; low (red) requires manual review.</li>
+      <li><b>"Accept all high-confidence"</b> bulk action is the fast path. Operator can still review medium/low items individually.</li>
+      <li><b>Total cost so far:</b> ~$0.34 (cached Sonnet call + 1 Haiku rule compile). Shown in the audit log; not exposed to the operator in the UI to avoid being noisy.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— "Here's what we found"</span></h4>
+    <ul>
+      <li><b>Headline rewritten:</b> <em>"We found 6 things in your file"</em> instead of "Claude analyzed 4,127 rows across 8 columns in 42 seconds." No mention of Claude, row counts, or technical timing.</li>
+      <li><b>Confidence badges</b> replaced with green checkmarks (✓) and yellow question marks (?). Anything below <em>Medium</em> is auto-tagged for manual review — the customer never sees "low confidence".</li>
+      <li><b>Source file preview</b> keeps the highlighted-drop-rows treatment — it's good UX. Tooltip text changes from <em>"AI-suggested filter rule"</em> to plain <em>"Looks like an employee sale"</em>.</li>
+      <li><b>The "Possible alias" low-confidence card</b> is hidden by default and surfaces only on the Customer Detail Rules tab as a separate "Worth your attention" inbox — too easy to misinterpret in-flow.</li>
+      <li><b>Bulk action button</b> simplified: <em>"Looks right · Continue →"</em> in place of "Accept all high-confidence · Continue".</li>
+    </ul>
+    <div class="quote">"It found employee sales and out-of-state rows — yep, those should be excluded. Continue."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 5: SCHEMA MAPPING -->
+<!-- ============================================================ -->
+<section class="screen" id="s5">
+  <div class="screen-head">
+    <div class="screen-num">5</div>
+    <div>
+      <h2 class="screen-title">Step 3: Schema Mapping</h2>
+      <p class="screen-purpose">Visual column-to-field mapping. AI proposed it; operator drags lines to fix anything wrong.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">Add · RNDC · Mapping</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg><span class="lbl">Rules Library</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div class="wizard">
+        <span class="w-step done"><span class="num">✓</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step active"><span class="num">3</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">4</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">5</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">6</span>Publish</span>
+      </div>
+
+      <p style="color:var(--muted); font-size:13px; margin-bottom:14px;">
+        Drag a source column to a target field. Existing connections are AI suggestions — click to confirm or reassign.
+      </p>
+
+      <div class="mapping-container">
+        <!-- Source -->
+        <div class="mapping-col">
+          <div class="mapping-col-label">Source columns (file)</div>
+          <div class="mapping-field"><span>CustName</span><span class="tag">str</span></div>
+          <div class="mapping-field"><span>State</span><span class="tag">str</span></div>
+          <div class="mapping-field"><span>Sold</span><span class="tag">num</span></div>
+          <div class="mapping-field"><span>Item</span><span class="tag">str</span></div>
+          <div class="mapping-field"><span>FOB</span><span class="tag">num</span></div>
+          <div class="mapping-field"><span>Division</span><span class="tag">str</span></div>
+          <div class="mapping-field"><span>OrderDate</span><span class="tag">date</span></div>
+          <div class="mapping-field"><span style="color:var(--muted);">RepCode</span><span class="tag">str</span></div>
+        </div>
+        <!-- Arrows -->
+        <div class="mapping-arrows">
+          <svg viewBox="0 0 60 320" preserveAspectRatio="none">
+            <defs>
+              <marker id="map-arr" markerWidth="6" markerHeight="6" refX="5" refY="2" orient="auto">
+                <path d="M0,0 L0,4 L5,2 z" fill="#3b82f6"/>
+              </marker>
+            </defs>
+            <path d="M 0 18 C 30 18 30 24 60 24" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 60 C 30 60 30 68 60 68" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 100 C 30 100 30 110 60 110" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 140 C 30 140 30 154 60 154" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 180 C 30 180 30 196 60 196" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 220 C 30 220 30 240 60 240" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <path d="M 0 260 C 30 260 30 282 60 282" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#map-arr)"/>
+            <!-- last row unmapped — gray X -->
+            <line x1="20" y1="298" x2="40" y2="312" stroke="#cbd5e1" stroke-width="1.5"/>
+            <line x1="40" y1="298" x2="20" y2="312" stroke="#cbd5e1" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <!-- Target -->
+        <div class="mapping-col">
+          <div class="mapping-col-label">Target fields (sera_luce schema)</div>
+          <div class="mapping-field dim"><span>dim_customer.customer_name</span><span class="tag dim">dim</span></div>
+          <div class="mapping-field dim"><span>dim_customer.state</span><span class="tag dim">dim</span></div>
+          <div class="mapping-field fact"><span>fact_orders.qty_ordered</span><span class="tag fact">fact</span></div>
+          <div class="mapping-field dim"><span>dim_product.item_label</span><span class="tag dim">dim</span></div>
+          <div class="mapping-field fact"><span>fact_orders.unit_price</span><span class="tag fact">fact</span></div>
+          <div class="mapping-field dim"><span>dim_customer.division</span><span class="tag dim">dim</span></div>
+          <div class="mapping-field dim"><span>sl_dim_date.order_date</span><span class="tag dim">dim</span></div>
+          <div class="mapping-field dim" style="opacity:0.5;"><span>dim_sales_rep.rep_id</span><span class="tag dim">dim</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:14px; margin-top:16px; padding:10px 14px; background:var(--bg-tinted); border-radius:6px; font-size:12px;">
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:10px; height:10px; background:var(--accent); border-radius:2px;"></span>Fact (measure)</span>
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:10px; height:10px; background:var(--purple); border-radius:2px;"></span>Dimension</span>
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="opacity:0.5;">Faded = unmapped</span></span>
+        <span style="margin-left:auto; color:var(--muted);">7 of 8 columns mapped · 1 ignored (RepCode — no matching target)</span>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:20px;">
+        <button class="btn ghost">← Back</button>
+        <button class="btn primary">Continue to rules →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Fact vs. Dimension tags</b> — visual cue for star-schema modeling. Operator doesn't have to know SQL; the tags say what each field is for.</li>
+      <li><b>Curved connectors</b> rendered with React Flow (@xyflow/react). Operator drags from source pill to target pill to map. Existing connections (AI's suggestion) can be unlinked.</li>
+      <li><b>Unmapped columns</b> are explicit. <code>RepCode</code> on the source has no target — engineering would add a custom transform if needed, but the operator can ignore it.</li>
+      <li><b>Target schema</b> is fixed (Sera Luce template). New distributors don't invent new tables; they map into the existing dim/fact structure.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— mostly hidden</span></h4>
+    <ul>
+      <li><b>This screen usually doesn't render at all for customers.</b> If the AI mapped every column confidently, BrewGenie auto-advances from Screen 4 → Screen 6, skipping mapping entirely.</li>
+      <li><b>When it does surface:</b> only the unmapped/ambiguous columns appear, framed as questions. Example: <em>"We weren't sure what 'RepCode' means in your file — is this the salesperson's ID? Or something else?"</em></li>
+      <li><b>No fact/dim language.</b> Tags hidden. The whole screen presents as <em>"Help us understand this column"</em> with a dropdown of plain-English options.</li>
+      <li><b>If everything is mapped:</b> a one-line summary appears in the next screen instead: <em>"We matched all 8 columns in your file."</em></li>
+    </ul>
+    <div class="quote">"I'd never see this screen unless something is genuinely ambiguous. When I do see it, it's one question, not a whole schema diagram."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 6: RULES EDITOR (CENTERPIECE) -->
+<!-- ============================================================ -->
+<section class="screen" id="s6">
+  <div class="screen-head">
+    <div class="screen-num">6</div>
+    <div>
+      <h2 class="screen-title">Step 4: Rules Editor <span style="font-size:14px; color:var(--accent); font-weight:500; margin-left:8px;">★ centerpiece</span></h2>
+      <p class="screen-purpose">Where the business logic lives. Every rule from the Sera Luce ingestion doc has a home here. Five categories, each a tab.</p>
+    </div>
+  </div>
+
+  <div class="mockup tall">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">RNDC · Rules</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg><span class="lbl">Rules Library</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div class="wizard">
+        <span class="w-step done"><span class="num">✓</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step active"><span class="num">4</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">5</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">6</span>Publish</span>
+      </div>
+
+      <!-- Rule category tabs -->
+      <div class="tab-bar">
+        <a class="tab">Universal <span style="opacity:0.6">· 6</span></a>
+        <a class="tab active">Filter <span style="opacity:0.6">· 4</span></a>
+        <a class="tab">Transform <span style="opacity:0.6">· 2</span></a>
+        <a class="tab">Alias <span style="opacity:0.6">· 1</span></a>
+        <a class="tab">Custom Python <span style="opacity:0.6">· 0</span></a>
+      </div>
+
+      <!-- Plain-English rule input -->
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px; padding:12px; background:var(--purple-soft); border:1px dashed var(--purple); border-radius:8px;">
+        <svg style="width:18px; height:18px; color:var(--purple); flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L8 11l-6 1 4.5 4.5L5 23l7-4 7 4-1.5-6.5L22 12l-6-1L12 2z"/></svg>
+        <input style="flex:1; padding:6px 10px; border:1px solid var(--line-strong); border-radius:5px; font-size:13px; background:white;" placeholder="Type a rule in plain English: e.g. &quot;drop rows where Division = SalesRep&quot;" value=""/>
+        <button class="btn primary" style="padding:6px 12px;">+ Add rule</button>
+      </div>
+
+      <!-- Filter rules -->
+      <div class="rule-card">
+        <div class="rule-card-head">
+          <div>
+            <div class="rule-card-title">Drop rows where Division ∈ {SalesRep, Employee, Supplier}</div>
+            <div class="rule-card-meta">
+              <span class="badge ok">High confidence</span>
+              <span class="badge info">AI-suggested</span>
+              <span class="badge muted">Filter rule</span>
+            </div>
+          </div>
+          <div class="rule-card-actions">
+            <span class="icon-action">✎</span>
+            <span class="icon-action danger">×</span>
+          </div>
+        </div>
+        <div class="rule-card-body">
+          field: <span style="color:var(--accent-ink);">Division</span>  ·  op: <span style="color:var(--accent-ink);">in</span>  ·  value: <span style="color:var(--ok);">["SalesRep", "Employee", "Supplier"]</span>  ·  case: <span style="color:var(--muted);">insensitive</span>
+        </div>
+        <div class="rule-card-impact">
+          In sample (4,127 rows): drops <b>8 rows</b> · revenue impact <b>$0</b> (employee sales)
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-card-head">
+          <div>
+            <div class="rule-card-title">Drop out-of-state rows (territory: PA only)</div>
+            <div class="rule-card-meta">
+              <span class="badge ok">High confidence</span>
+              <span class="badge info">AI-suggested</span>
+              <span class="badge muted">Filter rule</span>
+            </div>
+          </div>
+          <div class="rule-card-actions">
+            <span class="icon-action">✎</span>
+            <span class="icon-action danger">×</span>
+          </div>
+        </div>
+        <div class="rule-card-body">
+          field: <span style="color:var(--accent-ink);">State</span>  ·  op: <span style="color:var(--accent-ink);">not in</span>  ·  value: <span style="color:var(--ok);">["PA"]</span>  ·  source: <span style="color:var(--muted);">distributor.state_territory</span>
+        </div>
+        <div class="rule-card-impact">
+          In sample: drops <b>3 rows</b> (NY · OH · MD)
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-card-head">
+          <div>
+            <div class="rule-card-title">Drop zero-quantity rows</div>
+            <div class="rule-card-meta">
+              <span class="badge info">From Universal rules</span>
+              <span class="badge muted">Filter rule</span>
+            </div>
+          </div>
+          <div class="rule-card-actions">
+            <span class="icon-action" title="Inherited — view in Universal tab">↗</span>
+          </div>
+        </div>
+        <div class="rule-card-body">
+          field: <span style="color:var(--accent-ink);">Sold</span>  ·  op: <span style="color:var(--accent-ink);">==</span>  ·  value: <span style="color:var(--num);">0</span>
+        </div>
+        <div class="rule-card-impact">
+          In sample: drops <b>1 row</b> · refunds / canceled orders
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-card-head">
+          <div>
+            <div class="rule-card-title">Drop rows missing OrderDate</div>
+            <div class="rule-card-meta">
+              <span class="badge warn">Manual</span>
+              <span class="badge muted">Filter rule</span>
+            </div>
+          </div>
+          <div class="rule-card-actions">
+            <span class="icon-action">✎</span>
+            <span class="icon-action danger">×</span>
+          </div>
+        </div>
+        <div class="rule-card-body">
+          field: <span style="color:var(--accent-ink);">OrderDate</span>  ·  op: <span style="color:var(--accent-ink);">is null</span>  ·  reason: <span style="color:var(--muted);">"manual subtotal / footer rows"</span>
+        </div>
+        <div class="rule-card-impact">
+          In sample: drops <b>0 rows</b> · safety net for hand-edited exports
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:20px;">
+        <button class="btn ghost">← Back</button>
+        <button class="btn primary">Continue to dry-run validation →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule categories breakdown -->
+  <div class="annotations" style="margin-top:24px;">
+    <h4>The five rule categories — what each one captures</h4>
+
+    <div class="split-2" style="gap:14px; margin-top:8px;">
+
+      <div class="col-pane" style="background:white;">
+        <div class="pane-title" style="color:var(--accent); margin-bottom:8px;">① Universal (applied to every distributor)</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.8;">
+          <li>Zero-quantity row drop</li>
+          <li>Out-of-state row drop (per distributor territory)</li>
+          <li>State name typo correction <code>DCB → DC</code></li>
+          <li>Division casing unification <code>OFF Premise → Off Premise</code></li>
+          <li>Customer name alias merge</li>
+          <li>Sales rep code variant merge</li>
+        </ul>
+      </div>
+
+      <div class="col-pane" style="background:white;">
+        <div class="pane-title" style="color:var(--accent); margin-bottom:8px;">② Filter rules (drop rows matching criteria)</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.8;">
+          <li><b>Artisans:</b> drop <code>MoCo DLC</code> placeholder rows</li>
+          <li><b>Artisans:</b> drop <code>DLC-*</code> store-level rows</li>
+          <li><b>Vintage:</b> drop where <code>Division ∈ {SalesRep, Employee, Supplier}</code></li>
+          <li><b>Vintage:</b> drop customer-info-only rows (no <code>Dollars Sold</code>)</li>
+          <li><b>Curated:</b> drop <code>Account Type = Samples</code></li>
+          <li><b>Curated:</b> drop <code>Account = Employee_*</code></li>
+          <li><b>Curated:</b> drop <code>Division = NA</code></li>
+          <li><b>Curated:</b> drop Price Label blank + FOB blank/zero</li>
+          <li><b>PAL:</b> drop where <code>Price Point Name ∌ "Sera Luce"</code></li>
+          <li><b>PAL:</b> drop manual subtotal rows (no Date)</li>
+          <li><b>Banville:</b> drop <code>Division = NA</code></li>
+          <li><b>Orsini:</b> drop <code>Division ∈ {SalesRep, Salesrep, Sales Rep}</code></li>
+        </ul>
+      </div>
+
+      <div class="col-pane" style="background:white;">
+        <div class="pane-title" style="color:var(--accent); margin-bottom:8px;">③ Transform rules (conversions &amp; derivations)</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.8;">
+          <li><b>PAL 4-bucket classifier:</b> <code>Item × Price Point Name</code> → bucket
+            <ul style="padding-left:14px; margin:4px 0;">
+              <li>Wholesale keg → qty × 1</li>
+              <li>Wholesale case → qty × 1</li>
+              <li>Retail 4-pack → qty ÷ 6</li>
+              <li>Retail single can → qty ÷ 24</li>
+            </ul>
+          </li>
+          <li><b>Orsini volume discount:</b> if qty ≥ 5, subtract $2.50/unit</li>
+          <li><b>Vintage:</b> net revenue = <code>Dollars Sold</code> (post-RIPs)</li>
+          <li><b>Banville:</b> per-row variable <code>unit_price</code></li>
+          <li><b>Curated hybrid pricing:</b> explicit FOB Price when present, A&amp;V wholesale fallback otherwise</li>
+        </ul>
+      </div>
+
+      <div class="col-pane" style="background:white;">
+        <div class="pane-title" style="color:var(--accent); margin-bottom:8px;">④ Alias rules (entity reconciliation)</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.8;">
+          <li><b>Customer aliases:</b> free-form mapping of raw names → canonical (e.g. <code>"THE ITALIAN STORE II" = "Italian Store II"</code>)</li>
+          <li><b>Sales rep aliases:</b> code &amp; name variants → single rep (e.g. <code>JGARERI / JOE → Joe Gareri</code>)</li>
+          <li><b>State code normalization:</b> typos, casing</li>
+          <li><b>Distributor canonicalization:</b> link to NBWA registry via <code>nbwa_distributor_id</code></li>
+        </ul>
+      </div>
+
+      <div class="col-pane" style="background:white; grid-column: 1 / -1;">
+        <div class="pane-title" style="color:var(--accent); margin-bottom:8px;">⑤ Custom Python (engineering escape hatch — flagged for review)</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); line-height:1.8;">
+          <li>Marked "needs custom code" — visible in audit log; engineer adds a transform function and re-registers the template before publish can proceed.</li>
+          <li>Used only for logic that's genuinely beyond declarative rules (e.g. cross-table joins, calls to external services, ML lookups).</li>
+          <li>Today's Sera Luce pipeline has zero rules in this category — all 6 distributors codify cleanly with categories ①–④.</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— fundamentally different. Full mockup below.</span></h4>
+    <ul>
+      <li><b>No tabs.</b> Tabs (Universal / Filter / Transform / Alias / Custom) are operator concepts. Customer just sees one input: <em>"Anything we should ignore from this file?"</em></li>
+      <li><b>No structured JSON.</b> The rule-card-body block (<code>field: Division · op: in · value: ["SalesRep"...]</code>) is hidden behind a <em>"Show as code"</em> toggle.</li>
+      <li><b>Toggles, not Add/Edit/Delete.</b> AI-suggested rules show up as cards with simple on/off switches. Off = the rule won't apply. No drag-handles, no rule-ordering.</li>
+      <li><b>Plain-English chat input</b> is the primary action. Type "drop employee sales" → Haiku compiles → a new toggle card appears with the rule pre-applied.</li>
+      <li><b>Universal rules are entirely hidden</b> — they apply automatically to everyone and are noise to a customer.</li>
+    </ul>
+    <div class="quote">"I want to type 'skip employee sales' and have BrewGenie just do it. The tabs and JSON would lose me in 10 seconds."</div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SCREEN 6 — CUSTOMER VIEW FULL MOCKUP -->
+  <!-- ============================================================ -->
+  <div style="margin-top: 36px;">
+    <h3 style="display: flex; align-items: center; gap: 10px; font-size: 17px; color: #155e75;">
+      <span style="display:inline-flex; width:24px; height:24px; background:#0891b2; color:white; border-radius:50%; align-items:center; justify-content:center; font-size:11px; font-weight:700;">C6</span>
+      Customer view of Screen 6 — Rule Chat
+    </h3>
+    <p style="color: var(--muted); font-size: 13px; margin-top: 4px;">Same publish action, same backend write — but the UX is a chat input plus on/off toggles instead of structured editor tabs.</p>
+
+    <div class="mockup customer-mockup tall">
+      <div class="mockup-top">
+        <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+        <div class="breadcrumb"><span class="current">My Sales Sources · Adding Artisans &amp; Vines</span></div>
+        <div class="top-actions">
+          <span style="font-size:12px; color:var(--muted);">Hi Justin</span>
+          <span class="avatar" style="background:linear-gradient(135deg,#fda4af,#f43f5e);">JT</span>
+        </div>
+      </div>
+      <div class="mockup-sidebar">
+        <div class="sidebar-section-label">My account</div>
+        <ul class="sidebar-nav">
+          <li><a href="#" class="active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            <span class="lbl">Data Sources</span>
+          </a></li>
+          <li><a href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span class="lbl">Data Health</span>
+          </a></li>
+          <li><a href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+            <span class="lbl">Settings</span>
+          </a></li>
+        </ul>
+        <div class="sidebar-section-label">Help</div>
+        <ul class="sidebar-nav">
+          <li><a href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span class="lbl">Get help</span>
+          </a></li>
+        </ul>
+      </div>
+      <div class="mockup-main">
+        <!-- Customer wizard — fewer steps, friendlier names -->
+        <div class="wizard">
+          <span class="w-step done"><span class="num">✓</span>File</span><span class="w-sep">———</span>
+          <span class="w-step done"><span class="num">✓</span>Review</span><span class="w-sep">———</span>
+          <span class="w-step active"><span class="num">3</span>Anything to skip?</span><span class="w-sep">———</span>
+          <span class="w-step"><span class="num">4</span>Preview</span><span class="w-sep">———</span>
+          <span class="w-step"><span class="num">5</span>Go live</span>
+        </div>
+
+        <h3 style="font-size:20px; color:var(--ink); margin: 0 0 6px;">Anything we should ignore from your Artisans file?</h3>
+        <p style="font-size:13px; color:var(--muted); margin: 0 0 16px;">Type in plain English, or just review what BrewGenie already spotted below.</p>
+
+        <!-- Chat input -->
+        <div class="rule-chat">
+          <h4>Tell BrewGenie what to skip</h4>
+          <p>You can type anything that should not count toward your reported revenue.</p>
+          <div class="chat-input">
+            <input type="text" placeholder="e.g. don't count rows where the price is $0" />
+            <button>Add rule</button>
+          </div>
+          <div class="examples">
+            <b>Try saying:</b>
+            <span class="ex-chip">"Skip employee sales"</span>
+            <span class="ex-chip">"Don't count tasting room samples"</span>
+            <span class="ex-chip">"Merge MoCo DLC stores into one"</span>
+          </div>
+        </div>
+
+        <!-- AI-detected rules as toggle cards -->
+        <h4 style="font-size:13px; color:var(--muted); margin: 18px 0 8px;">Suggestions from your file <span style="font-weight:400; margin-left:6px;">— 4 things BrewGenie noticed</span></h4>
+
+        <div class="toggle-rule">
+          <div class="toggle-switch"></div>
+          <div class="rule-text">
+            <div class="h">Skip MoCo DLC roll-up rows</div>
+            <p class="sub">These look like state-wide summary lines (e.g. <em>"moco dlc total"</em>). Counting them would double-count your individual DLC store sales.</p>
+          </div>
+          <div class="badge-impact">drops ≈12 rows</div>
+        </div>
+
+        <div class="toggle-rule">
+          <div class="toggle-switch"></div>
+          <div class="rule-text">
+            <div class="h">Skip individual DLC store rows (DLC-001, DLC-014, …)</div>
+            <p class="sub">Your master MoCo total already includes these store-level rows. Without this filter, your MD revenue would roughly double.</p>
+          </div>
+          <div class="badge-impact">drops ≈80 rows</div>
+        </div>
+
+        <div class="toggle-rule">
+          <div class="toggle-switch"></div>
+          <div class="rule-text">
+            <div class="h">Skip out-of-state rows</div>
+            <p class="sub">Artisans &amp; Vines covers DC, MD, VA. We saw 4 rows from outside that — probably internal moves.</p>
+          </div>
+          <div class="badge-impact">drops 4 rows</div>
+        </div>
+
+        <div class="toggle-rule off">
+          <div class="toggle-switch"></div>
+          <div class="rule-text">
+            <div class="h">Skip rows with zero quantity</div>
+            <p class="sub">Refunds or canceled orders that already balanced out. <span style="color:var(--muted);">Off by default — Artisans rarely has these.</span></p>
+          </div>
+          <div class="badge-impact">drops 0 rows</div>
+        </div>
+
+        <!-- Customer-level aliases -->
+        <h4 style="font-size:13px; color:var(--muted); margin: 22px 0 8px;">Merge customer names <span style="font-weight:400; margin-left:6px;">— spelled differently across files</span></h4>
+
+        <div class="toggle-rule">
+          <div class="toggle-switch"></div>
+          <div class="rule-text">
+            <div class="h">"THE ITALIAN STORE II" = "Italian Store II"</div>
+            <p class="sub">We saw both spellings in your data — merging them so your dashboard shows one account, not two.</p>
+          </div>
+          <div class="badge-impact">merges 2 → 1</div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; margin-top:24px;">
+          <button class="btn ghost">← Back</button>
+          <div style="display:flex; align-items:center; gap:14px;">
+            <a href="#" style="font-size:12px; color:var(--muted); text-decoration:none;">Show as code (advanced)</a>
+            <button class="btn primary lg" style="background:#0891b2;">Continue · Show me the preview →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotations">
+      <h4>What's different about the customer rules screen</h4>
+      <ul>
+        <li><b>One input, not tabs.</b> The plain-English chat input is the primary interaction. The structured tabs (Universal / Filter / Transform / Alias / Custom) are operator-only — they exist server-side but never render for customers.</li>
+        <li><b>Toggles instead of buttons.</b> AI-suggested rules ship pre-toggled-on for high-confidence detections, pre-toggled-off for low. Customer flips a switch to dis-/en-able. No "edit" / "delete" — only on/off.</li>
+        <li><b>"Skip" verb everywhere.</b> Replaces "drop", "filter", "exclude" — softer, less destructive-sounding, still precise.</li>
+        <li><b>Impact in human units.</b> "drops ≈12 rows" not "drops 12 rows out of 4,127 with 0.29% volume impact". Approximate ≈ signals "we estimated this from your sample".</li>
+        <li><b>"Show as code (advanced)"</b> toggle at the bottom expands to the operator structured-form view. For curious customers (or support sessions), nothing is hidden — just out of the way.</li>
+        <li><b>Universal rules hidden.</b> Zero-qty, state typo, division-casing rules apply to everyone and aren't worth showing.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 7: DRY-RUN -->
+<!-- ============================================================ -->
+<section class="screen" id="s7">
+  <div class="screen-head">
+    <div class="screen-num">7</div>
+    <div>
+      <h2 class="screen-title">Step 5: Dry-Run Validation</h2>
+      <p class="screen-purpose">Run all rules against the sample file in-memory. See exactly what gets in and what gets dropped.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">RNDC · Validate</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div class="wizard">
+        <span class="w-step done"><span class="num">✓</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step active"><span class="num">5</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step"><span class="num">6</span>Publish</span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--ok-soft); border:1px solid #86efac; border-radius:8px; margin-bottom:18px;">
+        <svg style="width:20px; height:20px; color:var(--ok);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        <div>
+          <div style="font-weight:600; color:var(--ok); font-size:14px;">Dry-run passed</div>
+          <div style="font-size:12px; color:var(--ink-soft);">4,127 rows in → 4,103 rows out · 24 drops fully accounted for · $217,540 net revenue · 0 errors</div>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Rows in</div>
+          <div class="value">4,127</div>
+          <div class="delta" style="color:var(--muted);">from sample file</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Rows kept</div>
+          <div class="value">4,103</div>
+          <div class="delta">99.4% retention</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Rows dropped</div>
+          <div class="value" style="color:var(--bad);">24</div>
+          <div class="delta" style="color:var(--bad);">12 employee · 8 out-of-state · 4 other</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Net revenue (sample)</div>
+          <div class="value">$217,540</div>
+          <div class="delta">Avg $53/unit</div>
+        </div>
+      </div>
+
+      <div class="split-2" style="margin-top:8px;">
+        <div class="col-pane">
+          <div class="pane-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>Drop breakdown</span>
+            <span class="badge bad">24 rows</span>
+          </div>
+          <table class="data-table" style="font-size:12px;">
+            <thead><tr><th>Reason</th><th>Rows</th><th>$ Impact</th></tr></thead>
+            <tbody>
+              <tr><td>Division = SalesRep / Employee</td><td>12</td><td>$0</td></tr>
+              <tr><td>Out of territory (NY · OH · MD)</td><td>8</td><td>$432</td></tr>
+              <tr><td>Zero quantity</td><td>3</td><td>$0</td></tr>
+              <tr><td>Missing OrderDate (footer rows)</td><td>1</td><td>$0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="col-pane">
+          <div class="pane-title">Sample dropped rows (click to inspect)</div>
+          <div class="file-preview">
+            <table>
+              <thead><tr><th>CustName</th><th>State</th><th>Sold</th><th>Reason</th></tr></thead>
+              <tbody>
+                <tr class="drop"><td>EmployeeX</td><td>PA</td><td>1</td><td style="color:var(--bad);">Division=SalesRep</td></tr>
+                <tr class="drop"><td>Beer Den</td><td>NY</td><td>1</td><td style="color:var(--bad);">Out-of-state</td></tr>
+                <tr class="drop"><td>—</td><td>PA</td><td>0</td><td style="color:var(--bad);">Zero qty</td></tr>
+                <tr class="drop"><td>Footer Total</td><td>—</td><td>—</td><td style="color:var(--bad);">No OrderDate</td></tr>
+                <tr class="drop"><td>EmployeeY</td><td>PA</td><td>2</td><td style="color:var(--bad);">Division=Employee</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:20px;">
+        <button class="btn ghost">← Tweak rules</button>
+        <button class="btn primary lg">Numbers look right · Publish pipeline →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Stats banner at top</b> — green = ready to ship, red would block. The 99.4% retention is the headline number operators trust.</li>
+      <li><b>Drop breakdown by reason</b> — each drop reason maps back to a specific rule. Click "Division = SalesRep" → jumps back to that rule in Screen 6.</li>
+      <li><b>Sample dropped rows</b> — visual confirmation each drop is correct. If the operator sees a legitimate sale here, they can disable the rule and re-run.</li>
+      <li><b>The big "Numbers look right" button</b> is intentional — published only after the operator has eyeballed the numbers and explicitly approves.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— "Preview your data"</span></h4>
+    <ul>
+      <li><b>Page title changes</b> from "Dry-Run Validation" to <em>"Preview your data"</em>. No mention of dry-run or validation as concepts.</li>
+      <li><b>"Rows in / Rows kept / Rows dropped" hidden.</b> Replaced with the actual numbers the customer cares about: <em>"Total revenue this file: $217,540"</em>, <em>"Top customer: Beer Den ($24k)"</em>, <em>"Most active month: this one"</em>.</li>
+      <li><b>Drop breakdown</b> kept but framed differently: <em>"Things we'll skip:"</em> with friendly reason text — "12 employee sales", "8 orders outside your territory", "3 zero-quantity rows (probably refunds)".</li>
+      <li><b>Sample dropped rows table</b> simplified: shows just <em>Who · What · Why we skipped it</em>. No state/qty columns.</li>
+      <li><b>CTA text</b>: <em>"This looks right · Activate my pipeline →"</em> instead of "Publish pipeline".</li>
+    </ul>
+    <div class="quote">"The number that matters is $217,540 — and the 'top customer' / 'top product' previews tell me the dashboard will actually be useful. I'll click Activate."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 8: PUBLISH -->
+<!-- ============================================================ -->
+<section class="screen" id="s8">
+  <div class="screen-head">
+    <div class="screen-num">8</div>
+    <div>
+      <h2 class="screen-title">Step 6: Publish</h2>
+      <p class="screen-purpose">Commit the config. Dagster picks it up within seconds and the pipeline goes live.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Sera Luce</a> <span class="sep">›</span> <span class="current">RNDC · Publish</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div class="wizard">
+        <span class="w-step done"><span class="num">✓</span>Upload</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Profile</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Map</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Rules</span><span class="w-sep">———</span>
+        <span class="w-step done"><span class="num">✓</span>Validate</span><span class="w-sep">———</span>
+        <span class="w-step active"><span class="num">6</span>Publish</span>
+      </div>
+
+      <div class="split-2">
+        <div>
+          <div class="col-pane">
+            <div class="pane-title">Summary</div>
+            <table style="width:100%; font-size:13px;">
+              <tbody>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Customer</td><td style="padding:8px 0; font-weight:600;">Sera Luce</td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Distributor</td><td style="padding:8px 0; font-weight:600;">RNDC <span style="color:var(--muted); font-weight:400;">(slug: <code>rndc-pa</code>)</span></td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">NBWA</td><td style="padding:8px 0;">Linked <code>#1842</code></td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Territory</td><td style="padding:8px 0;">PA</td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Source format</td><td style="padding:8px 0;"><code>xlsx-monthly-depletion</code></td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Column mappings</td><td style="padding:8px 0;">7 of 8</td></tr>
+                <tr style="border-bottom:1px solid var(--line);"><td style="padding:8px 0; color:var(--muted);">Rules</td><td style="padding:8px 0;">4 filter · 1 transform · 0 custom</td></tr>
+                <tr><td style="padding:8px 0; color:var(--muted);">Dry-run</td><td style="padding:8px 0;"><span class="badge ok">✓ Passed (4,103 / 4,127 kept)</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="col-pane">
+            <div class="pane-title">What happens next</div>
+            <div class="timeline">
+              <div class="timeline-item done">
+                <div class="ts">~now</div>
+                <div class="desc">Config written to <code>platform.distributor_pipeline_config</code></div>
+              </div>
+              <div class="timeline-item done">
+                <div class="ts">+5 sec</div>
+                <div class="desc">Audit row inserted into <code>platform.brewgenie_audit</code></div>
+              </div>
+              <div class="timeline-item">
+                <div class="ts">+15 sec</div>
+                <div class="desc">Dagster GraphQL receives reload trigger</div>
+              </div>
+              <div class="timeline-item">
+                <div class="ts">+60 sec</div>
+                <div class="desc">New sensor <code>sera-luce__rndc-pa_inbox_sensor</code> registers</div>
+              </div>
+              <div class="timeline-item">
+                <div class="ts">+90 sec</div>
+                <div class="desc">Pipeline ready · awaiting first file</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:20px; padding:16px 20px; background:var(--bg-tinted); border-radius:8px; font-size:13px; color:var(--ink-soft);">
+        Customer can now email files to <code style="background:white; padding:2px 8px; border-radius:4px; font-weight:600; color:var(--accent-ink);">seraluce@bevgenie.space</code> · subject doesn't matter · BrewGenie's route_inbox classifies and dispatches by content.
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:24px;">
+        <button class="btn ghost">← Back</button>
+        <button class="btn success lg">Publish RNDC pipeline</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>Summary card</b> is the at-a-glance record of every decision. Operator reads it as a sanity check before clicking Publish.</li>
+      <li><b>"What happens next" timeline</b> is honest about latency — operator sees that the pipeline isn't instantly live; it takes ~90 sec for Dagster to register the new sensors.</li>
+      <li><b>Email alias reminder</b> at the bottom — customer-friendly fact the operator can forward to the customer once they confirm publish.</li>
+      <li><b>Audit trail</b> — every publish writes a row to <code>platform.brewgenie_audit</code> with before/after state + AI provenance (which Claude call, model, tokens used). Compliance + debugging.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— "You're set up!"</span></h4>
+    <ul>
+      <li><b>Celebration screen.</b> Header: <em>"🎉 Artisans &amp; Vines is connected!"</em>. Visual delight here — confetti SVG or check-mark animation. Customer just shipped something.</li>
+      <li><b>Summary card</b> simplified to four facts: <em>"You connected Artisans &amp; Vines for DC, MD, VA. We'll skip 3 types of rows. Your dashboard updates every time a new file arrives. You're tracking $217,540 of revenue so far."</em></li>
+      <li><b>"What happens next" timeline removed.</b> Dagster reload, sensor registration, config write — none of that is shown. Customer doesn't need to know.</li>
+      <li><b>Email forwarding instructions front and center</b> as the single next-action card: <em>"Now, forward your monthly Artisans email to <code>seraluce@bevgenie.space</code>. We'll handle the rest."</em> With a "Copy email address" button.</li>
+      <li><b>Two CTAs</b> below: <em>"Add another distributor"</em> (loops back to wizard) and <em>"Open my BevGenie dashboard →"</em> (hands off to the consumption app).</li>
+    </ul>
+    <div class="quote">"I see a green checkmark, the email address to forward to, and a button to go to my BevGenie chat. Done in 15 minutes."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCREEN 9: PIPELINE MONITOR -->
+<!-- ============================================================ -->
+<section class="screen" id="s9">
+  <div class="screen-head">
+    <div class="screen-num">9</div>
+    <div>
+      <h2 class="screen-title">Pipeline Monitor</h2>
+      <p class="screen-purpose">Read-only view of the live Dagster pipeline. Operator confirms files are flowing and intervenes only on errors.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-top">
+      <div class="mockup-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><path d="M7 8h10l-1 12H8L7 8z"/><path d="M12 11v6"/></svg> BrewGenie</div>
+      <div class="breadcrumb"><a href="#">Pipelines</a> <span class="sep">›</span> <span class="current">sera-luce__rndc-pa</span></div>
+      <div class="top-actions"><span class="avatar">AK</span></div>
+    </div>
+    <div class="mockup-sidebar">
+      <div class="sidebar-section-label">Main</div>
+      <ul class="sidebar-nav">
+        <li><a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="lbl">Customers</span></a></li>
+        <li><a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span class="lbl">Pipelines</span></a></li>
+      </ul>
+    </div>
+    <div class="mockup-main">
+      <div style="display:flex; gap:14px; align-items:center; margin-bottom:18px;">
+        <div style="display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:var(--ok-soft); border-radius:20px;">
+          <span style="width:8px; height:8px; background:var(--ok); border-radius:50%; box-shadow:0 0 0 3px rgba(34,197,94,0.2);"></span>
+          <span style="font-size:12px; font-weight:600; color:var(--ok);">Healthy</span>
+        </div>
+        <div style="font-size:13px; color:var(--muted);">Sensor running · last poll 8 sec ago · 0 failures in 7 days</div>
+        <div style="margin-left:auto;">
+          <button class="btn secondary">Open in Dagster ↗</button>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Last successful run</div>
+          <div class="value" style="font-size:16px;">2 hr ago</div>
+          <div class="delta">~3m 12s duration</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Runs (7 days)</div>
+          <div class="value">14</div>
+          <div class="delta">14 success · 0 fail</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Files processed</div>
+          <div class="value">21</div>
+          <div class="delta">total since publish</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Fact rows added</div>
+          <div class="value">487</div>
+          <div class="delta">since publish</div>
+        </div>
+      </div>
+
+      <h4 style="margin:18px 0 8px 0;">Recent runs</h4>
+      <table class="data-table">
+        <thead>
+          <tr><th>Run ID</th><th>Trigger</th><th>Started</th><th>Duration</th><th>Rows in</th><th>Rows out</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code style="font-size:11px; color:var(--muted);">r/a4b21c</code></td>
+            <td>Sensor (S3 file)</td>
+            <td>2 hr ago</td>
+            <td>3m 12s</td>
+            <td>4,127</td>
+            <td>4,103</td>
+            <td><span class="badge ok">Success</span></td>
+          </tr>
+          <tr>
+            <td><code style="font-size:11px; color:var(--muted);">r/8e1f33</code></td>
+            <td>Sensor (S3 file)</td>
+            <td>1 day ago</td>
+            <td>2m 56s</td>
+            <td>3,892</td>
+            <td>3,870</td>
+            <td><span class="badge ok">Success</span></td>
+          </tr>
+          <tr>
+            <td><code style="font-size:11px; color:var(--muted);">r/22fc99</code></td>
+            <td>Sensor (S3 file)</td>
+            <td>3 days ago</td>
+            <td>3m 04s</td>
+            <td>4,210</td>
+            <td>4,188</td>
+            <td><span class="badge ok">Success</span></td>
+          </tr>
+          <tr>
+            <td><code style="font-size:11px; color:var(--muted);">r/91a04b</code></td>
+            <td>Manual (replay)</td>
+            <td>5 days ago</td>
+            <td>3m 18s</td>
+            <td>3,755</td>
+            <td>3,732</td>
+            <td><span class="badge ok">Success</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+
+  <div class="annotations">
+    <h4>Notable elements</h4>
+    <ul>
+      <li><b>"Healthy" indicator</b> is a single signal computed from: sensor heartbeat OK + last run succeeded + no error rate spike.</li>
+      <li><b>Stat cards</b> are live — they refresh every 30 seconds via Dagster's GraphQL API.</li>
+      <li><b>"Open in Dagster" button</b> is the escape hatch: anything Dagster's UI can do that BrewGenie can't (e.g. inspect asset materializations, view raw logs) is one click away.</li>
+      <li><b>No write controls</b> on this screen. BrewGenie deliberately doesn't let operators trigger runs from here — that should go through the Pipelines section's "Replay" flow which has its own confirmation.</li>
+    </ul>
+  </div>
+
+  <div class="customer-view">
+    <h4>Customer view <span class="persona">— "Data Health"</span></h4>
+    <ul>
+      <li><b>Renamed to "Data Health".</b> The word <em>pipeline</em> doesn't appear anywhere on the customer's version of this screen.</li>
+      <li><b>Big traffic-light indicator</b> dominates the page — green / yellow / red instead of run IDs and durations. Green = files arriving on schedule and processing cleanly.</li>
+      <li><b>Stat cards reduce to two:</b> <em>"Last update"</em> (e.g. "2 hours ago") and <em>"Files received this month"</em> (e.g. "21"). Run counts, durations, and replay options are operator-only.</li>
+      <li><b>"Open in Dagster" button hidden.</b> The escape hatch to the Dagster UI is operator-only.</li>
+      <li><b>Recent runs table replaced</b> with a friendly <em>"Recent files"</em> list: filename · received-at · status. No run IDs, no row-in/row-out counts.</li>
+      <li><b>"Something looks wrong?" support link</b> at the bottom — clicks open a pre-filled help request that includes the source ID, last run ID, and customer ID. Operator triages from BrewGenie's admin view.</li>
+    </ul>
+    <div class="quote">"All my distributors are green. Last update was 2 hours ago. If anything goes red, I have a one-click 'Get help' button — that's all I need."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- COMPARISON TABLE — OPERATOR vs CUSTOMER AT A GLANCE -->
+<!-- ============================================================ -->
+<section class="screen">
+  <div class="screen-head">
+    <div class="screen-num" style="background:linear-gradient(135deg,var(--accent),#0891b2);">≡</div>
+    <div>
+      <h2 class="screen-title">Operator vs. Customer — at a glance</h2>
+      <p class="screen-purpose">Same publish action, same backend, different chrome. Toggle is driven by <code class="inline" style="background:var(--bg-tinted); padding:1px 6px; border-radius:3px; font-family:'SF Mono',Menlo,monospace; font-size:12px; color:var(--accent-ink);">user.role</code> at sign-in.</p>
+    </div>
+  </div>
+
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>Aspect</th>
+        <th class="op-col">Operator (Twenty20 staff)</th>
+        <th class="cust-col">Customer (Justin, Sera Luce)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Sidebar items</td>
+        <td>Customers · Distributors · Rules Library · Pipelines · Audit Log · Settings</td>
+        <td>Data Sources · Data Health · Settings · Get help</td>
+      </tr>
+      <tr>
+        <td>Landing page</td>
+        <td>Customer list (all orgs)</td>
+        <td>Own org dashboard (direct)</td>
+      </tr>
+      <tr>
+        <td>Vocabulary</td>
+        <td>"distributor", "pipeline", "fact", "dimension", "rule"</td>
+        <td>"sales source", "skip", "merge", "where your data comes from"</td>
+      </tr>
+      <tr>
+        <td>Rules UX</td>
+        <td>Five tabs · structured editor · JSON visible · drag to reorder</td>
+        <td>Plain-English chat input · on/off toggles · "Show as code" tucked away</td>
+      </tr>
+      <tr>
+        <td>Schema mapping</td>
+        <td>Always shown · React-Flow visual editor · fact/dim tags</td>
+        <td>Hidden unless ambiguous · framed as single questions</td>
+      </tr>
+      <tr>
+        <td>Confidence badges</td>
+        <td>High · Medium · Low (with %) — operator can override anything</td>
+        <td>Green ✓ or yellow ? — low-confidence items routed to operator instead</td>
+      </tr>
+      <tr>
+        <td>AI provenance</td>
+        <td>Visible in audit log · model · tokens · prompt hash</td>
+        <td>Not exposed</td>
+      </tr>
+      <tr>
+        <td>Universal rules</td>
+        <td>Dedicated tab · editable · viewable per-org</td>
+        <td>Hidden · apply silently</td>
+      </tr>
+      <tr>
+        <td>Dry-run / Preview</td>
+        <td>Rows in/out · drop reason breakdown · sample table</td>
+        <td>Revenue total · top customer · top product · friendly "skip" list</td>
+      </tr>
+      <tr>
+        <td>Publish confirmation</td>
+        <td>Summary card + technical timeline (Dagster reload, sensor register)</td>
+        <td>Celebration screen + email forwarding instruction</td>
+      </tr>
+      <tr>
+        <td>Pipeline Monitor</td>
+        <td>Run IDs · durations · "Open in Dagster" escape · replay actions</td>
+        <td>Traffic-light health · file list · "Get help" link</td>
+      </tr>
+      <tr>
+        <td>Custom Python escape</td>
+        <td>Visible flag in audit · operator handles</td>
+        <td>Routed to operator silently — customer never sees it</td>
+      </tr>
+      <tr>
+        <td>Wizard step count</td>
+        <td>6 (Upload · Profile · Map · Rules · Validate · Publish)</td>
+        <td>5 (File · Review · Anything to skip? · Preview · Go live)</td>
+      </tr>
+      <tr>
+        <td>Time per onboarding</td>
+        <td>~20-30 min (with diligent review)</td>
+        <td>~15 min (target) — most steps are click-through</td>
+      </tr>
+      <tr>
+        <td>Color signal</td>
+        <td>Blue accent (var(--accent))</td>
+        <td>Teal accent (#0891b2) — same chrome, different highlight</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="annotations">
+    <h4>Implementation note</h4>
+    <ul>
+      <li><b>One codebase, one route tree.</b> Every page renders both views; a single React component-level prop (<code>persona: 'operator' | 'customer'</code>) decides which copy, controls, and badges to show.</li>
+      <li><b>Auth determines persona.</b> Twenty20 employees get <code>user.role = 'operator'</code> at sign-in; everyone else gets <code>'customer'</code>. Role check happens server-side in middleware; client just renders accordingly.</li>
+      <li><b>Operators can preview customer view.</b> A small toggle in the operator's avatar menu — <em>"View as customer"</em> — re-renders the current screen as it would appear to that customer. Useful during onboarding screen-shares and QA.</li>
+      <li><b>The customer mode is the bar.</b> If a screen is intuitive in customer mode, it's certainly intuitive in operator mode. We design customer-first and let operators see more, not the other way around.</li>
+    </ul>
+  </div>
+</section>
+
+<div style="margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center;">
+  End of walkthrough — BrewGenie UI Navigation v2 (with customer perspective), 2026-05-11 · companion to brewgenie-architecture-v2.html
+</div>
+
+</div>
+</body>
+</html>

@@ -40,6 +40,8 @@ _SEED = [
      "aliases": ["amount", "total", "net sales", "gross sales", "revenue", "dollars sold", "extended", "sale amount", "sale msrp", "line total"]},
     {"name": "region", "role": "dimension", "type": "string", "expect": "text",
      "aliases": ["state", "region", "account region", "market", "territory", "cust sales market", "province"]},
+    {"name": "postal_code", "role": "id", "type": "string", "expect": "id",
+     "aliases": ["zip", "zip code", "zipcode", "postal", "postal code", "post code"]},
     {"name": "sales_rep", "role": "dimension", "type": "string", "expect": "text",
      "aliases": ["sales rep", "salesperson", "rep", "sales representative", "rep code", "account rep"]},
     {"name": "channel", "role": "dimension", "type": "string", "expect": "text",
@@ -134,9 +136,14 @@ def matched_entity_set(col_matches: list[dict]) -> set[str]:
             if m["entity"] and m["entity"].get("entity")}
 
 
-def union_groups(sheets: list[dict], registry: list[dict], threshold: float = 0.6) -> list[dict]:
+def union_groups(sheets: list[dict], registry: list[dict], threshold: float = 0.85) -> list[dict]:
     """Group data sheets whose canonical-entity sets overlap enough to be unioned
-    into one table. Uses Jaccard similarity over matched entities (union-find)."""
+    into one table. Uses Jaccard similarity over matched entities (union-find).
+
+    The threshold is deliberately high: only near-identical schemas (e.g. the same
+    vendor's monthly exports) should be stacked. Sheets of a relational workbook —
+    a product master, a customer master, and a sales fact — overlap partially but
+    have different grains and must stay separate tables, not be unioned."""
     data = [s for s in sheets if s["kind"] == "data" and s.get("_profile")]
     ent_sets = {s["name"]: matched_entity_set(match_profile(s["_profile"], registry)) for s in data}
 
@@ -169,15 +176,21 @@ def union_groups(sheets: list[dict], registry: list[dict], threshold: float = 0.
     out, used = [], {}
     for members in groups.values():
         shared = set.intersection(*[ent_sets[m] for m in members]) if members else set()
-        # name the table by its dominant shape
-        if "amount" in shared or ("order_date" in shared and "quantity" in shared):
+        # Name by dominant shape. A sales/transaction table needs an actual
+        # measure (amount/quantity) tied to a customer/product — a bare date
+        # column (e.g. a supplier's start/end date) must NOT read as "sales".
+        # A sale has money (amount), or a quantity booked against an identified
+        # account (customer_id). A product master has quantity-like attributes but
+        # no amount and no customer_id → it stays "products".
+        is_sale = ("amount" in shared) or ("quantity" in shared and "customer_id" in shared)
+        if is_sale:
             table = "sales"
-        elif "order_date" in shared:
-            table = "transactions"
-        elif "customer" in shared and "order_date" not in shared:
+        elif "customer" in shared and "product" not in shared:
             table = "customers"
-        elif "product" in shared and "order_date" not in shared:
+        elif "product" in shared:
             table = "products"
+        elif "vendor" in shared:
+            table = "vendors"
         else:
             table = snake(members[0])
         # guarantee uniqueness across groups

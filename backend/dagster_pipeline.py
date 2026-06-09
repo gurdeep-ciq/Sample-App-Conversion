@@ -36,25 +36,59 @@ _SQL_TYPE = {"string": "TEXT", "integer": "INTEGER", "decimal": "NUMERIC",
 
 def _canonical_map(profile: dict, schema_cols: list[dict], registry: list[dict],
                    overrides: dict[str, str]) -> dict[str, str]:
-    """Map each schema column's name -> canonical entity name (or itself when
-    no confident/confirmed match)."""
+    """Map each schema column's name -> canonical entity name (or itself when no
+    confident/confirmed match).
+
+    Collisions are resolved by confidence: when several source columns claim the
+    same canonical entity (e.g. POS `Qty` and `Unit` both scoring as `quantity`),
+    only the highest-confidence one takes the canonical name; the rest keep their
+    own name. Without this, the conform step silently overwrote a row's value with
+    whichever colliding column came last."""
     matches = {m["source"]: m for m in E.match_profile(profile, registry)}
-    name_map: dict[str, str] = {}
+
+    # 1) propose (own_name, target, confidence) for every included column.
+    #    Overrides and the combined timestamp are pinned with a confidence above
+    #    any fuzzy score so they always win their target.
+    proposals: list[tuple[str, str, float]] = []
     for c in schema_cols:
         if not c.get("include"):
             continue
-        src = c.get("source", "")
-        if src and "+" in src:           # combined event_timestamp
-            name_map[c["name"]] = overrides.get(c["name"]) or "order_date"
-            continue
-        if src in overrides:
-            name_map[c["name"]] = overrides[src]
-            continue
-        m = matches.get(src)
-        if m and m["entity"] and m["entity"].get("entity"):
-            name_map[c["name"]] = m["entity"]["entity"]
+        own, src = c["name"], c.get("source", "")
+        if src and "+" in src:                       # combined event_timestamp
+            proposals.append((own, overrides.get(own) or "order_date", 2.0))
+        elif src in overrides:
+            proposals.append((own, overrides[src], 2.0))
         else:
-            name_map[c["name"]] = c["name"]
+            m = matches.get(src)
+            if m and m["entity"] and m["entity"].get("entity"):
+                proposals.append((own, m["entity"]["entity"], float(m["entity"].get("confidence", 0))))
+            else:
+                proposals.append((own, own, -1.0))   # no canonical match: keep own name
+
+    # 2) for each target, the highest-confidence claimant wins. A column whose own
+    #    name already IS the canonical name is a legitimate claimant too (so an
+    #    exact "Customer ID" beats a fuzzy "Credit ID" for `customer_id`).
+    winner: dict[str, str] = {}
+    for own, target, conf in proposals:
+        cur = winner.get(target)
+        if cur is None or conf > cur[1]:
+            winner[target] = (own, conf)
+
+    # 3) build the map: the winner of each target gets the canonical name; everyone
+    #    else keeps their own name.
+    name_map: dict[str, str] = {}
+    for own, target, conf in proposals:
+        name_map[own] = target if winner.get(target, (None,))[0] == own else own
+
+    # 4) final safety: guarantee output names are unique (suffix any residual dup).
+    seen: dict[str, int] = {}
+    for own in list(name_map):
+        nm = name_map[own]
+        if nm in seen:
+            seen[nm] += 1
+            name_map[own] = f"{nm}_{seen[nm]}"
+        else:
+            seen[nm] = 1
     return name_map
 
 

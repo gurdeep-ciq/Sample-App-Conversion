@@ -209,14 +209,18 @@ def _jsonable(v):
 
 
 _MEASURE_HINT = re.compile(r"(qty|quantity|units?|sold|cases?|bottles?|amount|amt|revenue|sales|net|gross|price|cost|fob|msrp|total|count|sum|volume|liters?)", re.I)
-_ID_HINT = re.compile(r"(sku|upc|ean|gtin|barcode|code|id$|_id|key|account|product|customer)", re.I)
+# id-ness must come from a code/key/id token — NOT bare "customer"/"product"/"account",
+# otherwise "Customer Name" / "Product Description" get mislabeled as ids.
+_ID_HINT = re.compile(r"(sku|upc|ean|gtin|barcode|code|key|id$|_id|\bid\b)", re.I)
 _DATE_HINT = re.compile(r"(date|day|month|year|period)", re.I)
 # boundary-safe: leading start/non-letter, trailing non-letter/end (so "Employee_Matt" matches, "Sampler" does not)
 INTERNAL_RE = re.compile(r"(^|[^a-z])(employee|salesrep|sales ?rep|sample|comp|complimentary|donation|staff|internal|supplier|house ?account|admin)([^a-z]|$)", re.I)
 
 
-def role_for(name: str, col: dict) -> str:
-    if col["type"] == "empty" or col["constant"] or col["allZero"]:
+def role_for(name: str, col: dict, row_count: int = 999) -> str:
+    # "constant" only signals a droppable column when there are enough rows to
+    # judge — on a 1-2 row sheet every column is trivially constant.
+    if col["type"] == "empty" or col["allZero"] or (col["constant"] and row_count >= 3):
         return "ignore"
     if col["type"] in ("date", "time") or _DATE_HINT.search(name) or re.search(r"\btime\b", name, re.I):
         return "timestamp"
@@ -260,7 +264,7 @@ def build_profile(sheet: dict) -> dict:
     for i, h in enumerate(raw_headers):
         col_vals = [r[i] if i < len(r) else None for r in data_rows]
         info = infer_column(col_vals)
-        role = role_for(h, info)
+        role = role_for(h, info, len(data_rows))
         columns.append({
             "index": i, "source": h, "canonical": snake(h),
             **info, "role": role, "ttype": target_type(h, info, role),
@@ -348,7 +352,9 @@ def generate_rules_and_schema(sheet: dict, profile: dict) -> dict:
 
     name_col = next((c for c in cols if re.search(r"(customer|account|name|store|outlet|client)", c["source"], re.I)
                      and c["type"] == "string" and c["role"] != "id"), None)
-    if name_col and name_col["nullRate"] > 0.001:
+    # Only treat blanks as droppable when the column is genuinely a populated name
+    # field; a mostly-empty column (>50% null) is the wrong column, not a filter target.
+    if name_col and 0.001 < name_col["nullRate"] <= 0.5:
         add(kind="filter", title=f'Drop rows with a blank "{name_col["source"]}"', confidence=0.7,
             spec={"column": name_col["source"], "op": "not_empty"},
             why=f'{round(name_col["nullRate"]*100)}% of rows have no value here.')
