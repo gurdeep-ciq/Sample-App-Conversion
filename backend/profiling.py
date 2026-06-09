@@ -412,6 +412,21 @@ def _to_iso_date(v):
     return s
 
 
+def _to_time_of_day(v):
+    """Normalize a time cell to HH:MM:SS. Spreadsheet readers hand back times as
+    datetime.time, as a datetime on the 1899-12-31 epoch, as an Excel serial
+    fraction (fraction of a 24h day), or as a string — handle all of them."""
+    if _is_blank(v):
+        return "00:00:00"
+    if isinstance(v, (_dt.datetime, _dt.time)):
+        return v.strftime("%H:%M:%S")
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        s = round((float(v) - int(v)) * 86400)
+        return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
+    m = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", str(v))
+    return f"{int(m.group(1)):02d}:{m.group(2)}:{m.group(3) or '00'}" if m else "00:00:00"
+
+
 def apply_pipeline(profile: dict, rules: list[dict], schema_cols: list[dict]) -> dict:
     """Run the enabled rules against the sheet's data rows. Returns cleaned rows,
     dropped rows (with reason), and per-column DQ stats."""
@@ -422,6 +437,15 @@ def apply_pipeline(profile: dict, rules: list[dict], schema_cols: list[dict]) ->
         rows.append({h: (r[i] if i < len(r) else None) for i, h in enumerate(headers)})
     input_count = len(rows)
     dropped = []
+
+    # combine runs BEFORE casts so it reads the original Date/Time cells, not
+    # cast-mutated values, and uses robust time-of-day parsing.
+    for r in [x for x in enabled if x["kind"] == "combine_datetime"]:
+        sp = r["spec"]
+        for o in rows:
+            d = _to_iso_date(o.get(sp["dateCol"]))
+            t = _to_time_of_day(o.get(sp["timeCol"]))
+            o[sp["target"]] = f"{d}T{t}" if d else None
 
     for r in [x for x in enabled if x["kind"] == "cast"]:
         col, to = r["spec"]["column"], r["spec"]["to"]
@@ -435,13 +459,6 @@ def apply_pipeline(profile: dict, rules: list[dict], schema_cols: list[dict]) ->
                 o[col] = _to_number(o[col])
             elif to == "date":
                 o[col] = _to_iso_date(o[col])
-
-    for r in [x for x in enabled if x["kind"] == "combine_datetime"]:
-        sp = r["spec"]
-        for o in rows:
-            d = _to_iso_date(o.get(sp["dateCol"]))
-            t = str(o.get(sp["timeCol"])).strip() if not _is_blank(o.get(sp["timeCol"])) else "00:00:00"
-            o[sp["target"]] = f"{d}T{t}" if d else None
 
     filters = [x for x in enabled if x["kind"] == "filter"]
     kept = []
