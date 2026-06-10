@@ -10,6 +10,10 @@ backend/registry.json
 backend/warehouse/
 # Local Postgres data dir (pgserver) — never commit
 backend/.pgdata/
+# Local SQLite warehouse, file storage, and generated pipelines (runtime artifacts)
+backend/warehouse.db
+backend/_filestore/
+backend/generated/
 
 # Secrets — never commit
 .env

@@ -17,14 +17,11 @@ The webserver/daemon/gRPC/SQL stacks the fork stripped are intentionally NOT use
 """
 from __future__ import annotations
 
-import json
-import os
 from typing import Any
 
 from dagster import (
     AssetCheckResult,
     AssetKey,
-    ConfigurableIOManager,
     DagsterEventType,
     DagsterInstance,
     Definitions,
@@ -35,11 +32,9 @@ from dagster import (
     asset_check,
 )
 
+import db as DB
 import entities as E
 from profiling import apply_pipeline, snake
-
-WAREHOUSE = os.path.join(os.path.dirname(__file__), "warehouse")
-os.makedirs(WAREHOUSE, exist_ok=True)
 
 # ONE shared instance for the process lifetime (compact lite_memory storage).
 INSTANCE = DagsterInstance.ephemeral()
@@ -48,32 +43,6 @@ _UPLOADS: list[str] = []  # partition keys (uploads) seen this session
 _SQL_TYPE = {"string": "TEXT", "integer": "INTEGER", "decimal": "NUMERIC",
              "date": "DATE", "time": "TIME", "timestamp": "TIMESTAMP",
              "number": "NUMERIC", "currency": "NUMERIC"}
-
-
-# --------------------------------------------------------------------------
-# IO manager resource — persists cleaned tables to the warehouse dir
-# --------------------------------------------------------------------------
-class TableIOManager(ConfigurableIOManager):
-    base: str
-
-    def handle_output(self, context, obj):
-        table = context.asset_key.path[-1]
-        pk = context.partition_key if context.has_partition_key else "all"
-        d = os.path.join(self.base, table)
-        os.makedirs(d, exist_ok=True)
-        path = os.path.join(d, f"{pk}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(obj, f, default=str)
-        context.add_output_metadata({"warehouse_path": path, "row_count": len(obj)})
-
-    def load_input(self, context):
-        table = context.asset_key.path[-1]
-        pk = context.partition_key if context.has_partition_key else "all"
-        path = os.path.join(self.base, table, f"{pk}.json")
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        return []
 
 
 # --------------------------------------------------------------------------
@@ -142,30 +111,11 @@ def _conform(profile, rules, schema_cols, registry, overrides):
 
 
 # --------------------------------------------------------------------------
-# cross-run schema baseline (reads prior partitions' schema from disk)
+# cross-run schema baseline — introspected live from the database
 # --------------------------------------------------------------------------
-def _previous_schema_cols(table: str, current_pk: str) -> list[str]:
-    d = os.path.join(WAREHOUSE, table)
-    cols: list[str] = []
-    if not os.path.isdir(d):
-        return cols
-    for fn in sorted(os.listdir(d)):
-        if fn.endswith(".schema.json") and fn != f"{current_pk}.schema.json":
-            try:
-                with open(os.path.join(d, fn), encoding="utf-8") as f:
-                    for c in json.load(f):
-                        if c["name"] not in cols:
-                            cols.append(c["name"])
-            except (json.JSONDecodeError, OSError, KeyError):
-                pass
-    return cols
-
-
-def _write_schema(table: str, pk: str, columns: list[dict]):
-    d = os.path.join(WAREHOUSE, table)
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, f"{pk}.schema.json"), "w", encoding="utf-8") as f:
-        json.dump(columns, f)
+def _previous_schema_cols(table: str) -> list[str]:
+    """Columns the staging table already has in the DB (before this write)."""
+    return DB.staging_columns(table)
 
 
 # --------------------------------------------------------------------------
@@ -209,11 +159,20 @@ def run_table_pipeline(table: str, members: list[dict], registry: list[dict],
             return _src
         src_assets.append(_mk())
 
-    @asset(name=table, deps=src_keys, partitions_def=parts, io_manager_key="warehouse_io")
+    # introspect the existing DB schema BEFORE writing (database-awareness / drift)
+    prev_cols = _previous_schema_cols(table)
+    added = [c for c in col_order if c not in prev_cols] if prev_cols else []
+    removed = [c for c in prev_cols if c not in col_order] if prev_cols else []
+
+    @asset(name=table, deps=src_keys, partitions_def=parts)
     def _table(context):
+        # persist the cleaned table to the relational DB (staging); idempotent per upload.
+        stg = DB.write_staging(table, col_order, col_types, union_rows, context.partition_key)
         context.add_output_metadata({"dagster/column_schema": table_schema,
                                      "row_count": len(union_rows),
                                      "partition": context.partition_key,
+                                     "db_table": stg["table"],
+                                     "added_columns": ", ".join(stg["addedColumns"]) or "none",
                                      "source_sheets": ", ".join(c["sheet"] for c in conformed)})
         return union_rows
 
@@ -221,9 +180,6 @@ def run_table_pipeline(table: str, members: list[dict], registry: list[dict],
     reg_names = {e["name"] for e in registry}
     known = [c for c in col_order if c in reg_names]
     new_cols = [c for c in col_order if c not in reg_names]
-    prev_cols = _previous_schema_cols(table, upload_id)
-    added = [c for c in col_order if c not in prev_cols] if prev_cols else []
-    removed = [c for c in prev_cols if c not in col_order] if prev_cols else []
 
     @asset_check(name="schema_vs_registry", asset=_table)
     def _chk_reg(context):
@@ -238,12 +194,9 @@ def run_table_pipeline(table: str, members: list[dict], registry: list[dict],
             "added": ", ".join(added) or "none",
             "removed": ", ".join(removed) or "none"})
 
-    defs = Definitions(assets=[*src_assets, _table], asset_checks=[_chk_reg, _chk_drift],
-                       resources={"warehouse_io": TableIOManager(base=WAREHOUSE)})
+    defs = Definitions(assets=[*src_assets, _table], asset_checks=[_chk_reg, _chk_drift])
     job = defs.get_implicit_global_asset_job_def()
     result = job.execute_in_process(instance=INSTANCE, partition_key=upload_id)
-
-    _write_schema(table, upload_id, [{"name": n, "type": col_types[n]} for n in col_order])
 
     # collect run summary from the shared instance
     asset_events = []
@@ -272,7 +225,7 @@ def run_table_pipeline(table: str, members: list[dict], registry: list[dict],
                                     else ("new columns added" if added else "stable"))},
         "dagsterRun": {"success": result.success, "runId": result.run_id,
                        "partition": upload_id, "assets": asset_events, "checks": checks,
-                       "warehousePath": os.path.join("warehouse", table, f"{upload_id}.json")},
+                       "warehousePath": f"db://{DB._safe_url()}/stg_{table}"},
     }
 
 
