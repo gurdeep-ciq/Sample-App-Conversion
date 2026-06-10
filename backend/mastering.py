@@ -20,13 +20,11 @@ overlap will not merge — that is the part that genuinely needs an LLM).
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import re
 
 from rapidfuzz import fuzz
 
-from dagster_pipeline import WAREHOUSE
+import db as DB
 
 # Entities we master, and where to find their id / name / attributes on a row.
 ENTITY_SPECS = {
@@ -48,44 +46,15 @@ def _is_blank(v) -> bool:
 
 
 # --------------------------------------------------------------------------
-# warehouse readers (the query surface)
+# warehouse readers — now backed by the relational DB (staging tables)
 # --------------------------------------------------------------------------
-def _partitions(table: str) -> list[str]:
-    d = os.path.join(WAREHOUSE, table)
-    if not os.path.isdir(d):
-        return []
-    return sorted(fn[:-5] for fn in os.listdir(d)
-                  if fn.endswith(".json") and not fn.endswith(".schema.json"))
-
-
 def list_tables() -> list[dict]:
-    if not os.path.isdir(WAREHOUSE):
-        return []
-    out = []
-    for table in sorted(os.listdir(WAREHOUSE)):
-        if table.startswith("_") or not os.path.isdir(os.path.join(WAREHOUSE, table)):
-            continue
-        parts = _partitions(table)
-        rows = sum(len(_read_partition(table, p)) for p in parts)
-        out.append({"table": table, "partitions": parts, "uploads": len(parts), "rowCount": rows})
-    return out
-
-
-def _read_partition(table: str, pk: str) -> list[dict]:
-    path = os.path.join(WAREHOUSE, table, f"{pk}.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return []
+    return DB.list_staging()
 
 
 def read_table(table: str, limit: int | None = None, enrich: bool = False) -> dict:
-    """All rows of a table across every partition (each row tagged with its upload)."""
-    rows: list[dict] = []
-    for pk in _partitions(table):
-        for r in _read_partition(table, pk):
-            rows.append({**r, "_partition": pk})
+    """All rows of a staging table (each row keeps its upload_id)."""
+    rows = [{**r, "_partition": r.get("upload_id")} for r in DB.read_staging(table)]
     if enrich:
         rows = enrich_rows(rows)
     total = len(rows)
@@ -95,12 +64,11 @@ def read_table(table: str, limit: int | None = None, enrich: bool = False) -> di
 
 
 def _all_rows() -> list[tuple[str, dict]]:
-    """(table, row) for every row in the warehouse — the mastering input."""
+    """(table, row) for every staging row — the mastering input."""
     out = []
-    for t in list_tables():
-        for pk in t["partitions"]:
-            for r in _read_partition(t["table"], pk):
-                out.append((t["table"], r))
+    for t in DB.list_staging():
+        for r in DB.read_staging(t["table"]):
+            out.append((t["table"], r))
     return out
 
 
