@@ -125,16 +125,19 @@
    Pipeline Studio frontend — backend-first (compact-dagster),
    with an offline preview fallback when the backend is down.
    ============================================================ */
-const STEPS = ["Upload","Sheets","Entities","Rules","Run","Export"];
+const STEPS = ["Upload","Sheets","Entities","Rules","Run","Export"];      // manual wizard
+const AUTO_STEPS = ["Upload","Business rules","Result"];                   // LLM autopilot
 const LS_URL = "ps_backend_url";
 const DEFAULT_URL = "http://127.0.0.1:8000";
 
 const state = {
-  step:0,
-  backend:{url: localStorage.getItem(LS_URL)||DEFAULT_URL, healthy:false, dagster:null},
+  step:0, auto:false,                 // auto = full LLM automation (set from /health)
+  backend:{url: localStorage.getItem(LS_URL)||DEFAULT_URL, healthy:false, dagster:null, llm:false, model:null, db:null},
   fileName:null, fileId:null, sheets:[], unionGroups:[], registry:[],
   overrides:{}, rulesBySheet:{}, groupsEnabled:{}, ingest:null, offline:null,
+  rules:"", automate:null,            // autopilot: business-rules text + /automate result
 };
+const activeSteps = () => state.auto ? AUTO_STEPS : STEPS;
 
 const $=s=>document.querySelector(s);
 const el=(t,a={},kids=[])=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k]);}(Array.isArray(kids)?kids:[kids]).forEach(c=>{if(c==null)return;n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;};
@@ -147,38 +150,47 @@ const api = {
   async ingest(plan){ const r=await fetch(state.backend.url+"/ingest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(plan)}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async confirm(confs){ const r=await fetch(state.backend.url+"/registry/confirm",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirmations:confs})}); return r.json(); },
   async runs(){ const r=await fetch(state.backend.url+"/runs",{cache:"no-store"}); return r.json(); },
+  async automate(fileId, business_rules){ const r=await fetch(state.backend.url+"/automate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,business_rules})}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
 };
 async function checkHealth(){
   try{ const h=await api.health(); state.backend.healthy=true; state.backend.dagster=h.dagster;
+    state.backend.llm=!!h.llm; state.backend.model=h.model; state.backend.db=h.db; state.auto=!!h.llm;
     $("#status").className="status-pill up"; $("#status-text").textContent="backend: up";
-    $("#engine-info").innerHTML=`compact-dagster<br><code>${esc(h.dagster)}</code><br>in-process materialize()`;
-  }catch{ state.backend.healthy=false;
+    $("#engine-info").innerHTML = h.llm
+      ? `AI autopilot<br><code>${esc(h.model)}</code><br>→ ${esc(h.db)}`
+      : `compact-dagster<br><code>${esc(h.dagster)}</code><br>in-process materialize()`;
+  }catch{ state.backend.healthy=false; state.auto=false;
     $("#status").className="status-pill down"; $("#status-text").textContent="backend: down";
     $("#engine-info").innerHTML="offline fallback<br>(start <code>run-backend.ps1</code> for Dagster)";
   }
 }
 
-function maxReached(){ if(state.ingest)return 5; if(Object.keys(state.rulesBySheet).length)return 4; if(state.sheets.length)return 3; return state.fileId?1:0; }
+function maxReached(){
+  if(state.auto){ return state.automate?2:(state.fileId?1:0); }
+  if(state.ingest)return 5; if(Object.keys(state.rulesBySheet).length)return 4; if(state.sheets.length)return 3; return state.fileId?1:0;
+}
 function renderNav(){
   const ul=$("#nav"); ul.innerHTML="";
-  STEPS.forEach((s,i)=>{
+  activeSteps().forEach((s,i)=>{
     const reach=i<=Math.max(maxReached(),state.step);
     ul.appendChild(el("li",{},[el("button",{class:i===state.step?"active":"",disabled:!reach,onclick:()=>{if(reach){state.step=i;render();}}},
       [el("span",{class:"dot "+(i<state.step?"done":i===state.step?"active":"")}),`${i+1}. ${s}`])]));
   });
 }
 function wizardBar(){
-  const bar=el("div",{class:"wizard"});
-  STEPS.forEach((s,i)=>{const c=i<state.step?"done":i===state.step?"active":"";
+  const steps=activeSteps(); const bar=el("div",{class:"wizard"});
+  steps.forEach((s,i)=>{const c=i<state.step?"done":i===state.step?"active":"";
     bar.appendChild(el("span",{class:"w-step "+c,onclick:()=>{if(i<=maxReached()){state.step=i;render();}}},[el("span",{class:"num"},i<state.step?"✓":String(i+1)),s]));
-    if(i<STEPS.length-1)bar.appendChild(el("span",{class:"w-sep"},"—"));});
+    if(i<steps.length-1)bar.appendChild(el("span",{class:"w-sep"},"—"));});
   return bar;
 }
 function render(){
   renderNav();
-  $("#crumb").textContent = state.fileName ? `${state.fileName} · ${STEPS[state.step]}` : "New ingestion";
+  $("#crumb").textContent = state.fileName ? `${state.fileName} · ${activeSteps()[state.step]}` : "New ingestion";
   const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
-  ({0:rUpload,1:rSheets,2:rEntities,3:rRules,4:rRun,5:rExport}[state.step])(m);
+  const map = state.auto ? {0:rUpload,1:rAutoRules,2:rAutoResult}
+                         : {0:rUpload,1:rSheets,2:rEntities,3:rRules,4:rRun,5:rExport};
+  (map[state.step]||rUpload)(m);
 }
 function reRender(){ render(); }
 
@@ -216,8 +228,95 @@ async function handleFile(file){
       state.rulesBySheet[s.name]=s.rules.map(r=>({...r}));
       (s.entityMatches||[]).forEach(em=>{ if(em.entity && em.entity.entity && em.entity.confidence>=0.62) state.overrides[em.source]=em.entity.entity; });
     });
-    state.step=1; render();
+    state.automate=null;
+    state.step=1; render();   // auto → Business rules; manual → Sheets
   }catch(e){ alert("Profile failed: "+e.message); state.step=0; render(); }
+}
+
+/* ===== Autopilot (LLM) flow: Business rules -> Result ===== */
+function rAutoRules(m){
+  const data=state.sheets.filter(s=>s.kind==="data"), meta=state.sheets.filter(s=>s.kind==="metadata");
+  m.appendChild(el("h1",{class:"page-title"},"Business rules"));
+  m.appendChild(el("p",{class:"page-sub"},"That's the only thing we need from you. The AI proposes the schema, integrates it into the database, generates the Dagster pipeline, and loads the data — automatically."));
+  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{html:`Read <b>${data.length}</b> data sheet(s)${meta.length?` (skipped ${meta.length} metadata)`:""} from <code>${esc(state.fileName)}</code>. Target DB: <b>${esc(state.backend.db||"")}</b> · model <code>${esc(state.backend.model||"")}</code>.`})]));
+  const pane=el("div",{class:"pane"});
+  pane.appendChild(el("div",{class:"pane-title"},"Business rules (plain English) — optional"));
+  const ta=el("textarea",{style:"width:100%;min-height:120px;padding:10px;border:1px solid var(--line-strong);border-radius:8px;font-size:13px;font-family:inherit;",placeholder:"e.g. Exclude employee and sample transactions. Treat On Premise vs Off Premise as the channel. Returns are negative quantities."});
+  ta.value=state.rules||""; ta.addEventListener("input",e=>state.rules=e.target.value);
+  pane.appendChild(ta);
+  const chips=el("div",{style:"margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"});
+  ["Exclude employee/sample rows.","Channel = On/Off Premise.","Drop out-of-territory rows.","Returns are negative quantities."].forEach(ex=>
+    chips.appendChild(el("span",{class:"chip",style:"cursor:pointer",onclick:()=>{state.rules=(state.rules?state.rules+" ":"")+ex; ta.value=state.rules;}},"+ "+ex)));
+  pane.appendChild(chips);
+  m.appendChild(pane);
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=0;render();}},"← Back"),
+    el("button",{class:"btn primary lg",onclick:runAutomate},"⚡ Automate →")
+  ]));
+}
+async function runAutomate(){
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{},"AI is proposing the schema, integrating with the database, generating the Dagster pipeline, and loading… (a few seconds)")]));
+  try{ state.automate=await api.automate(state.fileId, state.rules); state.step=2; render(); }
+  catch(e){ alert("Automate failed: "+e.message); state.step=1; render(); }
+}
+function colTable(cols){
+  const wrap=el("div",{class:"scroll-x"}); const t=el("table",{class:"data"});
+  t.appendChild(el("thead",{html:"<tr><th>Column</th><th>Type</th><th>Role</th><th>Source / FK</th></tr>"}));
+  const tb=el("tbody");
+  cols.forEach(c=>{ const ref=c.references?(' → '+c.references):''; const meta=(c.source||'')+ref;
+    const rc={pk:"warn",fk:"info",measure:"ok",attribute:"muted",degenerate:"muted"}[c.role]||"muted";
+    tb.appendChild(el("tr",{html:`<td><code>${esc(c.name)}</code></td><td>${esc(c.type)}</td><td><span class="badge ${rc}">${esc(c.role)}</span></td><td style="color:var(--muted)">${esc(meta)}</td>`})); });
+  t.appendChild(tb); wrap.appendChild(t); return wrap;
+}
+function rAutoResult(m){
+  const res=state.automate;
+  m.appendChild(el("h1",{class:"page-title"},"Automated — loaded to the database"));
+  if(!res){ m.appendChild(el("div",{class:"empty-hint"},"No run yet.")); return; }
+  const run=res.run||{}; const ass=run.assets||[];
+  const ensure=(ass.find(a=>a.asset==="ensure_warehouse")||{}).metadata||{};
+  const load=(ass.find(a=>a.asset==="load_warehouse")||{}).metadata||{};
+  const fk=(run.checks||[]).find(c=>c.name==="fk_integrity")||{};
+  m.appendChild(el("div",{class:"alert "+(run.success&&fk.passed?"ok":"warn")},[icon(run.success&&fk.passed?"ok":"warn"),
+    el("div",{html:`Dagster run <code>${esc(String(run.runId||"").slice(0,8))}</code> ${run.success?"succeeded":"failed"} → <b>${esc(res.db)}</b>. FK integrity: <b>${fk.passed?"✓ 0 orphans":"⚠ "+((fk.metadata||{}).orphan_rows)+" orphans"}</b>. <span style="color:var(--muted)">LLM ${esc((res.usage||{}).model||"")} · ${(res.usage||{})['in']||0}/${(res.usage||{}).out||0} tok</span>`})]));
+
+  // Proposed star schema
+  const sp=el("div",{class:"pane"}); sp.appendChild(el("div",{class:"pane-title"},"AI-proposed canonical star schema"));
+  (res.schema.dimensions||[]).forEach(d=>{ sp.appendChild(el("div",{style:"margin:8px 0 4px"},[el("span",{class:"badge purple"},"dimension"),el("span",{style:"font-weight:600;margin-left:6px"},d.table),el("span",{style:"color:var(--muted);margin-left:8px;font-size:12px"},d.grain||"")])); sp.appendChild(colTable(d.columns)); });
+  (res.schema.facts||[]).forEach(f=>{ sp.appendChild(el("div",{style:"margin:12px 0 4px"},[el("span",{class:"badge info"},"fact"),el("span",{style:"font-weight:600;margin-left:6px"},f.table),el("span",{style:"color:var(--muted);margin-left:8px;font-size:12px"},f.grain||"")])); sp.appendChild(colTable(f.columns)); });
+  m.appendChild(sp);
+
+  // DB integration plan
+  const dp=el("div",{class:"pane"}); dp.appendChild(el("div",{class:"pane-title"},"Database integration plan (awareness)"));
+  dp.appendChild(el("div",{style:"font-size:13px;margin-bottom:8px"},[
+    el("div",{html:`<b>Created:</b> <span style="color:var(--ok)">${esc(ensure.created||"none")}</span>`}),
+    el("div",{html:`<b>Altered (added columns to existing):</b> <span style="color:var(--warn)">${esc(ensure.altered||"none")}</span>`}),
+    el("div",{html:`<b>Reused (existing tables):</b> <span style="color:var(--muted)">${esc(ensure.reused||"none")}</span>`}),
+  ]));
+  const dt=el("table",{class:"data"}); dt.appendChild(el("thead",{html:"<tr><th>Table now in DB</th><th>Columns</th><th>FKs</th><th></th></tr>"}));
+  const dtb=el("tbody"); (res.dbAfter||[]).forEach(t=>dtb.appendChild(el("tr",{html:`<td><code>${esc(t.name)}</code></td><td>${t.columns}</td><td>${t.fks}</td><td>${t.new?'<span class="badge ok">new</span>':'<span class="badge muted">reused</span>'}</td>`}))); dt.appendChild(dtb);
+  dp.appendChild(el("div",{class:"scroll-x"},dt)); m.appendChild(dp);
+
+  // Load results
+  const lp=el("div",{class:"pane"}); lp.appendChild(el("div",{class:"pane-title"},"Rows loaded"));
+  const loaded=Object.entries(load).filter(([k])=>k.startsWith("rows__"));
+  loaded.forEach(([k,v])=>lp.appendChild(el("span",{class:"chip"},k.replace("rows__","")+": "+v)));
+  if(load.fk_unresolved) lp.appendChild(el("div",{style:"font-size:12px;color:var(--muted);margin-top:6px"},`${load.fk_unresolved} fk value(s) unresolved (left NULL — typically cross-sheet keys; integrity preserved).`));
+  m.appendChild(lp);
+
+  // Generated Dagster code
+  const cp=el("div",{class:"pane"});
+  cp.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center"},[
+    el("div",{class:"pane-title",style:"margin:0"},`Generated Dagster pipeline · ${esc(run.generatedPath||"")}`),
+    el("button",{class:"btn secondary",onclick:()=>dl("pipeline.py",run.generatedCode||"","text/x-python")},"Download .py")
+  ]));
+  cp.appendChild(el("div",{class:"code-block",style:"max-height:340px"},run.generatedCode||""));
+  m.appendChild(cp);
+
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=1;render();}},"← Edit rules & re-run"),
+    el("button",{class:"btn success lg",onclick:()=>{$("#reset-btn").click();}},"Automate another file")
+  ]));
 }
 
 /* Step 1: Sheets */
@@ -489,7 +588,7 @@ function icon(kind){
   return el("span",{html:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">${p[kind]}</svg>`}).firstChild;
 }
 
-$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null});render();});
+$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null,rules:"",automate:null});render();});
 $("#status").addEventListener("click",async()=>{const u=prompt("Backend URL:",state.backend.url);if(u){state.backend.url=u.trim().replace(/\/$/,"");localStorage.setItem(LS_URL,state.backend.url);await checkHealth();render();}});
 (async()=>{ await checkHealth(); render(); })();
 </script>

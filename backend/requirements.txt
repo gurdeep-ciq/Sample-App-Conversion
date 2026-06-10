@@ -11,3 +11,7 @@ uvicorn[standard]>=0.27
 python-multipart>=0.0.9
 openpyxl>=3.1
 rapidfuzz>=3.0
+anthropic>=0.40            # LLM: schema introspection, fact/dim modeling, code-gen
+psycopg[binary]>=3.2       # Postgres/Supabase introspection + FK-safe load
+pgserver>=0.1.4            # zero-install local Postgres when DATABASE_URL is unset
+python-dotenv>=1.0         # load secrets from backend/.env

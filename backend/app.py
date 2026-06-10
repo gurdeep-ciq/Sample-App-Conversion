@@ -25,7 +25,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import codegen
+import config
+import db
 import entities as E
+import llm
 import mastering as M
 import profiling as P
 from dagster_pipeline import run_detail, run_history, run_table_pipeline
@@ -50,7 +54,9 @@ def _strip(obj):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "dagster": dagster.__version__, "engine": "compact-dagster (in-process)"}
+    return {"ok": True, "dagster": dagster.__version__, "engine": "compact-dagster (in-process)",
+            "llm": config.has_llm(), "model": config.ANTHROPIC_MODEL if config.has_llm() else None,
+            "db": db.db_label(), "db_configured": config.has_db()}
 
 
 @app.get("/registry")
@@ -161,6 +167,43 @@ def ingest(body: IngestBody):
         results.append(run_table_pipeline(t.table, members, registry, upload_id))
 
     return {"tables": results, "uploadId": upload_id}
+
+
+class AutomateBody(BaseModel):
+    fileId: str
+    business_rules: str = ""
+
+
+@app.post("/automate")
+def automate(body: AutomateBody):
+    """Full automation: LLM proposes a canonical star schema (aware of the existing
+    DB), we generate a Dagster pipeline, run it, and FK-safely load into Postgres.
+    The only human input is `business_rules`."""
+    wb = _CACHE.get(body.fileId)
+    if not wb:
+        raise HTTPException(status_code=404, detail="Unknown fileId — re-run /profile.")
+    if not config.has_llm():
+        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not set in backend/.env")
+    before = db.introspect()
+    try:
+        schema = llm.propose_star_schema(wb, body.business_rules, existing_db_schema=before)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM schema proposal failed: {e}")
+    rows = db.cleaned_rows_by_sheet(wb)
+    upload_id = P.snake(wb.get("fileName", "upload")) + "_" + wb.get("contentHash", body.fileId[:8])
+    run = codegen.build_and_run(schema, rows, wb.get("fileName", "upload"), upload_id)
+    after = db.introspect()
+    before_names = {t["name"] for t in before["tables"]}
+    return {
+        "fileName": wb.get("fileName"),
+        "db": db.db_label(),
+        "schema": {k: v for k, v in schema.items() if not k.startswith("_")},
+        "usage": schema.get("_usage"),
+        "dbBefore": sorted(before_names),
+        "dbAfter": [{"name": t["name"], "columns": len(t["columns"]), "fks": len(t["fks"]),
+                     "new": t["name"] not in before_names} for t in after["tables"]],
+        "run": run,
+    }
 
 
 @app.get("/runs")

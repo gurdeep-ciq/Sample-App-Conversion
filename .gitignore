@@ -8,6 +8,12 @@ backend/.venv/
 backend/registry.json
 # Materialized tables written by the Dagster IO manager
 backend/warehouse/
+# Local Postgres data dir (pgserver) — never commit
+backend/.pgdata/
+
+# Secrets — never commit
+.env
+backend/.env
 
 # Editors / OS
 .DS_Store
