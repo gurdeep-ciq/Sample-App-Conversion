@@ -27,9 +27,13 @@ import json
 import os
 import tempfile
 
+import csv
+import io
+
 import dagster
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import codegen
@@ -206,6 +210,7 @@ def automate(body: AutomateBody):
     run = codegen.build_and_run(schema, rows, meta["filename"], upload_id)
     after = DB.ai_introspect()
     before_names = {t["name"] for t in before["tables"]}
+    after_names = [t["name"] for t in after["tables"]]
     return {
         "fileName": wb.get("fileName"), "db": DB.db_label(),
         "schema": {k: v for k, v in schema.items() if not k.startswith("_")},
@@ -213,6 +218,8 @@ def automate(body: AutomateBody):
         "dbBefore": sorted(before_names),
         "dbAfter": [{"name": t["name"], "columns": len(t["columns"]), "fks": len(t["fks"]),
                      "new": t["name"] not in before_names} for t in after["tables"]],
+        "ddl": DB.export_ddl(after_names),   # replayable CREATE TABLE (with FKs) for export
+        "tables": after_names,               # exportable table names
         "run": run,
     }
 
@@ -248,6 +255,26 @@ def master(entity: str):
     if entity not in M.ENTITY_SPECS:
         raise HTTPException(status_code=404, detail=f"Unknown entity '{entity}'.")
     return M.compute_master(entity)
+
+
+@app.get("/export/{name}")
+def export(name: str, format: str = "csv"):
+    """Download a loaded table's rows as CSV or JSON (the post-pipeline export)."""
+    res = DB.export_rows(name)
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"No table '{name}' in the warehouse.")
+    tn, rows = res
+    if format == "json":
+        return Response(json.dumps(rows, indent=2, default=str), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{tn}.json"'})
+    buf = io.StringIO()
+    cols = list(rows[0].keys()) if rows else []
+    w = csv.DictWriter(buf, fieldnames=cols)
+    w.writeheader()
+    for r in rows:
+        w.writerow({k: ("" if v is None else v) for k, v in r.items()})
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{tn}.csv"'})
 
 
 @app.get("/schema")

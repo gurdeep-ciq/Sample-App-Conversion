@@ -18,7 +18,9 @@ import os
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    # override=True so values in backend/.env win even if the shell exported an
+    # empty ANTHROPIC_API_KEY (load_dotenv does not override existing env vars by default).
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 except Exception:  # pragma: no cover
     pass
 

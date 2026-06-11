@@ -143,6 +143,7 @@ const $=s=>document.querySelector(s);
 const el=(t,a={},kids=[])=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k]);}(Array.isArray(kids)?kids:[kids]).forEach(c=>{if(c==null)return;n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function dl(name,text,mime="text/plain"){const b=new Blob([text],{type:mime});const u=URL.createObjectURL(b);const a=el("a",{href:u,download:name});document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
+function dlUrl(url){const a=el("a",{href:url});document.body.appendChild(a);a.click();a.remove();}  // backend sends Content-Disposition
 
 const api = {
   async health(){ const r=await fetch(state.backend.url+"/health",{cache:"no-store"}); return r.json(); },
@@ -303,6 +304,30 @@ function rAutoResult(m){
   loaded.forEach(([k,v])=>lp.appendChild(el("span",{class:"chip"},k.replace("rows__","")+": "+v)));
   if(load.fk_unresolved) lp.appendChild(el("div",{style:"font-size:12px;color:var(--muted);margin-top:6px"},`${load.fk_unresolved} fk value(s) unresolved (left NULL — typically cross-sheet keys; integrity preserved).`));
   m.appendChild(lp);
+
+  // Export — download the loaded data, schema & pipeline (post-pipeline export)
+  const xp=el("div",{class:"pane"}); xp.appendChild(el("div",{class:"pane-title"},"Export"));
+  xp.appendChild(el("div",{style:"font-size:13px;color:var(--muted);margin-bottom:8px"},"Download the cleaned data loaded into the database, the schema, and the generated pipeline."));
+  const base=state.backend.url;
+  const tnames=(res.tables&&res.tables.length?res.tables:(res.dbAfter||[]).map(t=>t.name));
+  const xg=el("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:8px"});
+  // per-table data downloads (served by the backend with Content-Disposition)
+  tnames.forEach(t=>{
+    xg.appendChild(el("div",{class:"rule",style:"margin:0"},[
+      el("div",{style:"flex:1"},el("div",{class:"rt mono"},t)),
+      el("button",{class:"btn secondary",onclick:()=>dlUrl(`${base}/export/${encodeURIComponent(t)}?format=csv`)},"CSV"),
+      el("button",{class:"btn secondary",style:"margin-left:6px",onclick:()=>dlUrl(`${base}/export/${encodeURIComponent(t)}?format=json`)},"JSON"),
+    ]));
+  });
+  // artifacts derivable from the response
+  [["Schema — SQL DDL (.sql)",()=>dl("schema.sql",res.ddl||"","text/plain")],
+   ["Schema — JSON",()=>dl("schema.json",JSON.stringify(res.schema,null,2),"application/json")],
+   ["Generated pipeline (.py)",()=>dl("pipeline.py",(res.run||{}).generatedCode||"","text/x-python")],
+  ].forEach(([lab,fn])=>xg.appendChild(el("div",{class:"rule",style:"margin:0"},[
+    el("div",{style:"flex:1"},el("div",{class:"rt"},lab)),el("button",{class:"btn secondary",onclick:fn},"Download")])));
+  xp.appendChild(xg);
+  xp.appendChild(el("div",{style:"margin-top:10px"},el("button",{class:"btn primary",onclick:()=>tnames.forEach(t=>dlUrl(`${base}/export/${encodeURIComponent(t)}?format=csv`))},"⬇ Download all tables (CSV)")));
+  m.appendChild(xp);
 
   // Generated Dagster code
   const cp=el("div",{class:"pane"});

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from sqlalchemy import (Column, Float, ForeignKey, Integer, MetaData, String, Table,
                         create_engine, event, inspect, text)
+from sqlalchemy.schema import CreateTable
 
 import config
 from profiling import apply_pipeline, snake
@@ -60,21 +61,25 @@ def ensure_star():
 
 
 # ---- type handling -------------------------------------------------------
-_NUM = {"number", "decimal", "currency"}
-_SA = {"integer": Integer}
+# Recognize BOTH the profiler's vocabulary (number/decimal/currency) and the LLM
+# tool's vocabulary (numeric/bigint/...) so measures land as real numbers, not TEXT.
+_NUM = {"number", "decimal", "currency", "numeric", "float", "double"}
+_INT = {"integer", "int", "bigint", "smallint"}
 _DDL = {"sqlite": {"num": "REAL", "int": "INTEGER", "text": "TEXT"},
-        "default": {"num": "DOUBLE PRECISION", "int": "INTEGER", "text": "TEXT"}}
+        "default": {"num": "DOUBLE PRECISION", "int": "BIGINT", "text": "TEXT"}}
 
 
 def _sa_type(t: str):
     if t in _NUM:
         return Float
-    return _SA.get(t, String)
+    if t in _INT:
+        return Integer
+    return String
 
 
 def _ddl_type(t: str) -> str:
     d = _DDL.get(ENGINE.dialect.name, _DDL["default"])
-    return d["num"] if t in _NUM else (d["int"] if t == "integer" else d["text"])
+    return d["num"] if t in _NUM else (d["int"] if t in _INT else d["text"])
 
 
 def _coerce(v, t: str):
@@ -85,9 +90,9 @@ def _coerce(v, t: str):
             return float(str(v).replace(",", "").replace("$", "").strip())
         except ValueError:
             return None
-    if t == "integer":
+    if t in _INT:
         try:
-            return int(float(v))
+            return int(float(str(v).replace(",", "").strip()))
         except (ValueError, TypeError):
             return None
     return str(v)
@@ -245,6 +250,39 @@ def insert_fact_raw(row: dict):
         cx.execute(fact_sales.insert(), [row])
 
 
+# ---- export helpers ------------------------------------------------------
+def resolve_table(name: str) -> str | None:
+    """Map a logical name to a real table: exact, or the ai_/stg_ namespaced form.
+    Returns None if no such table (also guards against SQL injection — only real
+    table names are ever interpolated)."""
+    real = set(inspect(ENGINE).get_table_names())
+    for cand in (name, _AI + snake(name), "stg_" + snake(name)):
+        if cand in real:
+            return cand
+    return None
+
+
+def export_rows(name: str) -> tuple[str, list[dict]] | None:
+    tn = resolve_table(name)
+    if not tn:
+        return None
+    return tn, query(f'SELECT * FROM "{tn}"', limit=1_000_000)
+
+
+def export_ddl(names: list[str]) -> str:
+    """CREATE TABLE statements (FK constraints included) for the given tables,
+    compiled to the active dialect — the schema you could replay on Supabase."""
+    md = MetaData()
+    out = []
+    for n in names:
+        tn = resolve_table(n)
+        if not tn:
+            continue
+        t = Table(tn, md, autoload_with=ENGINE)
+        out.append(str(CreateTable(t).compile(ENGINE)).strip().rstrip(";") + ";")
+    return "\n\n".join(out)
+
+
 def _safe_url() -> str:
     u = config.DATABASE_URL
     if "@" in u:  # hide credentials
@@ -258,6 +296,7 @@ def _safe_url() -> str:
 # Runs on the same SQLAlchemy engine (SQLite locally / Supabase via DATABASE_URL).
 # ==========================================================================
 _AI = "ai_"
+UPLOAD_COL = "_upload_id"   # hidden per-upload tag on fact tables → idempotent re-ingest
 
 
 def db_label() -> str:
@@ -310,6 +349,12 @@ def ensure_tables(schema: dict) -> dict:
             s = f'ALTER TABLE {_ai(table)} ADD COLUMN "{col["name"]}" {_ddl_type(col["type"])}'
             cx.execute(text(s)); ddl.append(s); altered.append(f'{table}.{col["name"]}'); existing[table].add(col["name"])
 
+    def ensure_upload_col(cx, t):
+        # facts carry a hidden _upload_id so a re-run can replace its own rows (idempotent).
+        if UPLOAD_COL not in existing.get(t, set()):
+            cx.execute(text(f'ALTER TABLE {_ai(t)} ADD COLUMN "{UPLOAD_COL}" TEXT'))
+            existing.setdefault(t, set()).add(UPLOAD_COL)
+
     def create(cx, t, columns, is_fact):
         colsql, fksql = [], []
         for col in columns:
@@ -320,22 +365,33 @@ def ensure_tables(schema: dict) -> dict:
                 rt, rc = col["references"].split(".", 1)
                 if rt in existing:
                     fksql.append(f'FOREIGN KEY ("{col["name"]}") REFERENCES {_ai(rt)} ("{rc}")')
+        if is_fact:
+            colsql.append(f'"{UPLOAD_COL}" TEXT')
         s = f'CREATE TABLE {_ai(t)} (\n  ' + ",\n  ".join(colsql + fksql) + "\n)"
-        cx.execute(text(s)); ddl.append(s); created.append(t); existing[t] = {c["name"] for c in columns}
+        cx.execute(text(s)); ddl.append(s); created.append(t)
+        existing[t] = {c["name"] for c in columns} | ({UPLOAD_COL} if is_fact else set())
 
     with ENGINE.begin() as cx:
         for d in schema.get("dimensions", []):
             t = d["table"]
-            reused.append(t) or addcols(cx, t, d["columns"]) if t in existing else create(cx, t, d["columns"], False)
+            if t in existing:
+                reused.append(t); addcols(cx, t, d["columns"])
+            else:
+                create(cx, t, d["columns"], False)
         for f in schema.get("facts", []):
             t = f["table"]
-            reused.append(t) or addcols(cx, t, f["columns"]) if t in existing else create(cx, t, f["columns"], True)
+            if t in existing:
+                reused.append(t); addcols(cx, t, f["columns"]); ensure_upload_col(cx, t)
+            else:
+                create(cx, t, f["columns"], True)
     return {"created": created, "reused": reused, "altered": altered, "ddl": ddl}
 
 
-def load(schema: dict, rows_by_sheet: dict) -> dict:
+def load(schema: dict, rows_by_sheet: dict, upload_id: str | None = None) -> dict:
     """Upsert dims (natural key -> surrogate pk), then insert FK-resolved facts — into
-    the ai_ namespace, FK-safe."""
+    the ai_ namespace, FK-safe. Idempotent: when `upload_id` is given, a fact table's
+    rows from a prior run of the same upload are deleted before re-insert, so re-running
+    /automate on the same file does not double-count (dims dedupe via natural key)."""
     dims = {d["table"]: d for d in schema.get("dimensions", [])}
     report = {"dimensions": {}, "facts": {}, "fk_unresolved": 0}
     insp = inspect(ENGINE)
@@ -396,6 +452,9 @@ def load(schema: dict, rows_by_sheet: dict) -> dict:
                     sheets.add(col["source"].split(".", 1)[0])
             sheets = [s for s in sheets if s in rows_by_sheet] or list(rows_by_sheet.keys())
             allowedf = actual.get(f["table"], set()); types = types_by_table.get(f["table"], {})
+            # idempotency: drop this upload's prior rows before re-inserting.
+            if upload_id and UPLOAD_COL in allowedf:
+                cx.execute(text(f'DELETE FROM {_ai(f["table"])} WHERE "{UPLOAD_COL}" = :u'), {"u": upload_id})
             inserted = 0
             for sheet in sheets:
                 for row in rows_by_sheet[sheet]:
@@ -411,6 +470,8 @@ def load(schema: dict, rows_by_sheet: dict) -> dict:
                         else:
                             rec[col["name"]] = _coerce(row.get(_src_col(col.get("source", "")) or col["name"]),
                                                        types.get(col["name"], "text"))
+                    if upload_id and UPLOAD_COL in allowedf:
+                        rec[UPLOAD_COL] = upload_id
                     cols = [c for c in rec]
                     if cols:
                         body = ", ".join(f'"{c}"' for c in cols)

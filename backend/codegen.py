@@ -36,6 +36,7 @@ from dagster import (asset, asset_check, AssetCheckResult, MaterializeResult,
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = json.load(open(os.path.join(HERE, "schema.json"), encoding="utf-8"))
 ROWS = json.load(open(os.path.join(HERE, "rows.json"), encoding="utf-8"))
+UPLOAD_ID = "{upload_id}"  # tags fact rows so re-running this pipeline is idempotent
 
 TABLES = {{t["table"]: t for t in (SCHEMA["dimensions"] + SCHEMA["facts"])}}
 
@@ -58,7 +59,7 @@ def ensure_warehouse():
 @asset(deps=[ensure_warehouse],
        description="Upsert dimensions on their natural key, then insert FK-resolved facts.")
 def load_warehouse():
-    rep = db.load(SCHEMA, ROWS)
+    rep = db.load(SCHEMA, ROWS, UPLOAD_ID)
     md = {{}}
     for t, n in {{**rep["dimensions"], **rep["facts"]}}.items():
         if n is not None:
@@ -102,7 +103,7 @@ def generate(schema: dict, rows_by_sheet: dict, title: str, run_id: str) -> dict
         json.dump(clean_schema, f, indent=2)
     with open(os.path.join(out_dir, "rows.json"), "w", encoding="utf-8") as f:
         json.dump(rows_by_sheet, f, default=str)
-    code = _TEMPLATE.format(title=title)
+    code = _TEMPLATE.format(title=title, upload_id=run_id)
     path = os.path.join(out_dir, "pipeline.py")
     with open(path, "w", encoding="utf-8") as f:
         f.write(code)
