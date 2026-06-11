@@ -136,11 +136,12 @@ const state = {
   fileName:null, fileId:null, sheets:[], unionGroups:[], registry:[],
   overrides:{}, rulesBySheet:{}, groupsEnabled:{}, ingest:null, offline:null,
   rules:"", automate:null,            // autopilot: business-rules text + /automate result
+  files:[], automateResults:[],       // autopilot multi-file: [{fileId,fileName,data,meta}], per-file results
 };
 const activeSteps = () => state.auto ? AUTO_STEPS : STEPS;
 
 const $=s=>document.querySelector(s);
-const el=(t,a={},kids=[])=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k]);}(Array.isArray(kids)?kids:[kids]).forEach(c=>{if(c==null)return;n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;};
+const el=(t,a={},kids=[])=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else if(a[k]===false||a[k]==null){/* skip falsy boolean attrs (e.g. disabled:false) so the attr is absent */}else n.setAttribute(k,a[k]);}(Array.isArray(kids)?kids:[kids]).forEach(c=>{if(c==null)return;n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function dl(name,text,mime="text/plain"){const b=new Blob([text],{type:mime});const u=URL.createObjectURL(b);const a=el("a",{href:u,download:name});document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
 
@@ -166,7 +167,7 @@ async function checkHealth(){
 }
 
 function maxReached(){
-  if(state.auto){ return state.automate?2:(state.fileId?1:0); }
+  if(state.auto){ return state.automateResults.length?2:(state.files.length?1:0); }
   if(state.ingest)return 5; if(Object.keys(state.rulesBySheet).length)return 4; if(state.sheets.length)return 3; return state.fileId?1:0;
 }
 function renderNav(){
@@ -196,21 +197,26 @@ function reRender(){ render(); }
 
 /* Step 0: Upload */
 function rUpload(m){
-  m.appendChild(el("h1",{class:"page-title"},"Upload a file"));
-  m.appendChild(el("p",{class:"page-sub"},"Drop a messy spreadsheet/CSV. The backend profiles every sheet, suggests a canonical schema, and compiles a Dagster ingestion pipeline."));
+  const multi = state.backend.healthy && state.auto;
+  m.appendChild(el("h1",{class:"page-title"}, multi?"Upload files":"Upload a file"));
+  m.appendChild(el("p",{class:"page-sub"}, multi
+    ? "Drop one or more messy spreadsheets/CSVs. The AI proposes a canonical schema, generates the Dagster pipeline, and loads each file — later files integrate into the schema the earlier ones built."
+    : "Drop a messy spreadsheet/CSV. The backend profiles every sheet, suggests a canonical schema, and compiles a Dagster ingestion pipeline."));
   if(!state.backend.healthy)
     m.appendChild(el("div",{class:"alert warn"},[icon("warn"),el("div",{html:`<b>Backend not reachable</b> at <code>${esc(state.backend.url)}</code>. Start it with <code>run-backend.ps1</code> for full multi-sheet + entity-matching + Dagster execution. You can still do a basic offline preview below.`})]));
   const dz=el("div",{class:"drop-zone"},[
     el("div",{class:"icon",html:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'}),
-    el("h3",{}, state.backend.healthy?"Drop a file or click to browse":"Drop a file (offline preview)"),
+    el("h3",{}, !state.backend.healthy?"Drop a file (offline preview)":multi?"Drop files or click to browse":"Drop a file or click to browse"),
     el("p",{},"Multi-sheet workbooks, metadata sheets, split date/time, scientific-notation codes, internal-sale rows — all handled."),
     el("div",{class:"formats"},[".xlsx",".xls",".csv",".tsv"].map(f=>el("span",{class:"fmt"},f)))
   ]);
-  const input=el("input",{type:"file",accept:".xlsx,.xls,.csv,.tsv,.txt",class:"hidden",onchange:e=>{if(e.target.files[0])handleFile(e.target.files[0]);}});
+  const input=el("input",{type:"file",accept:".xlsx,.xls,.csv,.tsv,.txt",class:"hidden",
+    ...(multi?{multiple:"multiple"}:{}),
+    onchange:e=>{ const fs=[...e.target.files]; if(fs.length) multi?handleFiles(fs):handleFile(fs[0]); }});
   dz.addEventListener("click",()=>input.click());
   dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("hover");});
   dz.addEventListener("dragleave",()=>dz.classList.remove("hover"));
-  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("hover");if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("hover"); const fs=[...e.dataTransfer.files]; if(fs.length) multi?handleFiles(fs):handleFile(fs[0]);});
   m.appendChild(dz); m.appendChild(input);
 }
 async function handleFile(file){
@@ -232,16 +238,48 @@ async function handleFile(file){
     state.step=1; render();   // auto → Business rules; manual → Sheets
   }catch(e){ alert("Profile failed: "+e.message); state.step=0; render(); }
 }
+/* Autopilot: profile any number of files, then go to the shared Business-rules step. */
+async function handleFiles(fileList){
+  state.automate=null; state.automateResults=[];
+  const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
+  const status=el("div",{class:"alert info"},[icon("info"),el("div",{},`Profiling ${fileList.length} file(s)…`)]);
+  m.appendChild(status);
+  for(const file of fileList){
+    if(state.files.some(f=>f.fileName===file.name)) continue;   // skip duplicates by name
+    try{
+      const p=await api.profile(file);
+      const data=p.sheets.filter(s=>s.kind==="data").length, meta=p.sheets.filter(s=>s.kind==="metadata").length;
+      state.files.push({fileId:p.fileId, fileName:p.fileName, data, meta});
+      status.querySelector("div:last-child").textContent=`Profiled ${state.files.length} file(s)…`;
+    }catch(e){ alert(`Profile failed for ${file.name}: ${e.message}`); }
+  }
+  state.registry = state.files.length ? state.registry : [];
+  state.step=1; render();
+}
 
 /* ===== Autopilot (LLM) flow: Business rules -> Result ===== */
 function rAutoRules(m){
-  const data=state.sheets.filter(s=>s.kind==="data"), meta=state.sheets.filter(s=>s.kind==="metadata");
   m.appendChild(el("h1",{class:"page-title"},"Business rules"));
-  m.appendChild(el("p",{class:"page-sub"},"That's the only thing we need from you. The AI proposes the schema, integrates it into the database, generates the Dagster pipeline, and loads the data — automatically."));
-  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{html:`Read <b>${data.length}</b> data sheet(s)${meta.length?` (skipped ${meta.length} metadata)`:""} from <code>${esc(state.fileName)}</code>. Target DB: <b>${esc(state.backend.db||"")}</b> · model <code>${esc(state.backend.model||"")}</code>.`})]));
+  m.appendChild(el("p",{class:"page-sub"},"That's the only thing we need from you. The AI proposes the schema, integrates it into the database, generates the Dagster pipeline, and loads every file — automatically."));
+  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{html:`<b>${state.files.length}</b> file(s) ready. Target DB: <b>${esc(state.backend.db||"")}</b> · model <code>${esc(state.backend.model||"")}</code>. Files load in order — each integrates into the schema the earlier ones built.`})]));
+
+  // file list (add / remove)
+  const fp=el("div",{class:"pane"});
+  fp.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center"},[
+    el("div",{class:"pane-title",style:"margin:0"},`Files (${state.files.length})`),
+    el("button",{class:"btn secondary",onclick:()=>{state.step=0;render();}},"+ Add more files")
+  ]));
+  state.files.forEach((f,i)=>fp.appendChild(el("div",{class:"sheet-card"},[
+    el("div",{class:"body"},[el("div",{class:"h"},[`${i+1}. ${f.fileName} `,
+      el("span",{class:"badge info"},`${f.data} data`), f.meta?el("span",{class:"badge muted"},`${f.meta} meta`):null])]),
+    el("button",{class:"btn ghost",style:"color:var(--bad)",onclick:()=>{state.files.splice(i,1); if(!state.files.length)state.step=0; render();}},"Remove")
+  ])));
+  if(!state.files.length) fp.appendChild(el("div",{class:"empty-hint"},"No files yet — add some."));
+  m.appendChild(fp);
+
   const pane=el("div",{class:"pane"});
-  pane.appendChild(el("div",{class:"pane-title"},"Business rules (plain English) — optional"));
-  const ta=el("textarea",{style:"width:100%;min-height:120px;padding:10px;border:1px solid var(--line-strong);border-radius:8px;font-size:13px;font-family:inherit;",placeholder:"e.g. Exclude employee and sample transactions. Treat On Premise vs Off Premise as the channel. Returns are negative quantities."});
+  pane.appendChild(el("div",{class:"pane-title"},"Business rules (plain English) — applied to all files, optional"));
+  const ta=el("textarea",{style:"width:100%;min-height:110px;padding:10px;border:1px solid var(--line-strong);border-radius:8px;font-size:13px;font-family:inherit;",placeholder:"e.g. Exclude employee and sample transactions. Treat On Premise vs Off Premise as the channel. Returns are negative quantities."});
   ta.value=state.rules||""; ta.addEventListener("input",e=>state.rules=e.target.value);
   pane.appendChild(ta);
   const chips=el("div",{style:"margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"});
@@ -251,14 +289,23 @@ function rAutoRules(m){
   m.appendChild(pane);
   m.appendChild(el("div",{class:"row-between"},[
     el("button",{class:"btn ghost",onclick:()=>{state.step=0;render();}},"← Back"),
-    el("button",{class:"btn primary lg",onclick:runAutomate},"⚡ Automate →")
+    el("button",{class:"btn primary lg",disabled:!state.files.length,onclick:runAutomate},
+      `⚡ Automate ${state.files.length>1?state.files.length+" files":""} →`)
   ]));
 }
 async function runAutomate(){
   const m=$("#main"); m.innerHTML=""; m.appendChild(wizardBar());
-  m.appendChild(el("div",{class:"alert info"},[icon("info"),el("div",{},"AI is proposing the schema, integrating with the database, generating the Dagster pipeline, and loading… (a few seconds)")]));
-  try{ state.automate=await api.automate(state.fileId, state.rules); state.step=2; render(); }
-  catch(e){ alert("Automate failed: "+e.message); state.step=1; render(); }
+  const status=el("div",{class:"alert info"},[icon("info"),el("div",{},"Starting…")]);
+  m.appendChild(status);
+  state.automateResults=[];
+  for(let i=0;i<state.files.length;i++){
+    const f=state.files[i];
+    status.querySelector("div:last-child").textContent=
+      `AI automating ${i+1}/${state.files.length}: ${f.fileName} — schema → pipeline → FK-safe load…`;
+    try{ const res=await api.automate(f.fileId, state.rules); res._fileName=f.fileName; state.automateResults.push(res); }
+    catch(e){ state.automateResults.push({_fileName:f.fileName, _error:e.message}); }
+  }
+  state.step=2; render();
 }
 function colTable(cols){
   const wrap=el("div",{class:"scroll-x"}); const t=el("table",{class:"data"});
@@ -270,9 +317,26 @@ function colTable(cols){
   t.appendChild(tb); wrap.appendChild(t); return wrap;
 }
 function rAutoResult(m){
-  const res=state.automate;
-  m.appendChild(el("h1",{class:"page-title"},"Automated — loaded to the database"));
-  if(!res){ m.appendChild(el("div",{class:"empty-hint"},"No run yet.")); return; }
+  const results=state.automateResults||[];
+  m.appendChild(el("h1",{class:"page-title"}, results.length>1?`Automated ${results.length} files — loaded to the database`:"Automated — loaded to the database"));
+  if(!results.length){ m.appendChild(el("div",{class:"empty-hint"},"No run yet.")); return; }
+  const okN=results.filter(r=>!r._error && (r.run||{}).success).length;
+  const allFk=results.every(r=>{ if(r._error)return false; const c=((r.run||{}).checks||[]).find(x=>x.name==="fk_integrity"); return c&&c.passed; });
+  m.appendChild(el("div",{class:"alert "+(okN===results.length&&allFk?"ok":"warn")},[icon(okN===results.length&&allFk?"ok":"warn"),
+    el("div",{html:`<b>${okN}/${results.length}</b> file(s) loaded into <b>${esc((results.find(r=>r.db)||{}).db||state.backend.db||"")}</b>. FK integrity across all uploads: <b>${allFk?"✓ 0 orphans":"⚠ see per-file below"}</b>.`})]));
+  results.forEach((res,i)=>{
+    const sec=el("div",{class:"pane",style:"border-left:3px solid var(--accent)"});
+    sec.appendChild(el("div",{class:"pane-title",style:"font-size:13px;color:var(--ink)"},`File ${i+1} of ${results.length}: ${esc(res._fileName||"")}`));
+    if(res._error) sec.appendChild(el("div",{class:"alert bad"},[icon("warn"),el("div",{},res._error)]));
+    else renderOneResult(sec, res);
+    m.appendChild(sec);
+  });
+  m.appendChild(el("div",{class:"row-between"},[
+    el("button",{class:"btn ghost",onclick:()=>{state.step=1;render();}},"← Edit rules & re-run"),
+    el("button",{class:"btn success lg",onclick:()=>{$("#reset-btn").click();}},"Automate more files")
+  ]));
+}
+function renderOneResult(m, res){
   const run=res.run||{}; const ass=run.assets||[];
   const ensure=(ass.find(a=>a.asset==="ensure_warehouse")||{}).metadata||{};
   const load=(ass.find(a=>a.asset==="load_warehouse")||{}).metadata||{};
@@ -312,11 +376,6 @@ function rAutoResult(m){
   ]));
   cp.appendChild(el("div",{class:"code-block",style:"max-height:340px"},run.generatedCode||""));
   m.appendChild(cp);
-
-  m.appendChild(el("div",{class:"row-between"},[
-    el("button",{class:"btn ghost",onclick:()=>{state.step=1;render();}},"← Edit rules & re-run"),
-    el("button",{class:"btn success lg",onclick:()=>{$("#reset-btn").click();}},"Automate another file")
-  ]));
 }
 
 /* Step 1: Sheets */
@@ -588,7 +647,7 @@ function icon(kind){
   return el("span",{html:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">${p[kind]}</svg>`}).firstChild;
 }
 
-$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null,rules:"",automate:null});render();});
+$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null,rules:"",automate:null,files:[],automateResults:[]});render();});
 $("#status").addEventListener("click",async()=>{const u=prompt("Backend URL:",state.backend.url);if(u){state.backend.url=u.trim().replace(/\/$/,"");localStorage.setItem(LS_URL,state.backend.url);await checkHealth();render();}});
 (async()=>{ await checkHealth(); render(); })();
 </script>
