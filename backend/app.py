@@ -224,6 +224,13 @@ def automate(body: AutomateBody):
     }
 
 
+@app.get("/uploads")
+def uploads():
+    """Previously-uploaded files (from S3 / local storage) so they can be reused
+    without re-uploading. Each fileId can be passed straight to /automate or /ingest."""
+    return {"uploads": storage.list_uploads()}
+
+
 @app.get("/runs")
 def runs():
     return {"runs": run_history()}

@@ -71,3 +71,67 @@ def url(key: str) -> str:
     if config.storage_backend() == "s3":
         return f"s3://{config.S3_BUCKET}/{key}"
     return "file://" + _local_path(key)
+
+
+def list_uploads() -> list[dict]:
+    """Every previously-uploaded file (so the UI can reuse one without re-uploading).
+    Returns [{fileId, fileName, ext, size, uploadedAt}] newest first."""
+    import datetime
+    import json as _json
+    prefix = config.S3_PREFIX.rstrip("/") + "/"
+    out: dict[str, dict] = {}
+
+    def slot(fid):
+        return out.setdefault(fid, {"fileId": fid, "fileName": None, "ext": None,
+                                    "size": 0, "uploadedAt": None})
+
+    if config.storage_backend() == "s3":
+        c = _client()
+        token = None
+        while True:
+            kw = {"Bucket": config.S3_BUCKET, "Prefix": prefix}
+            if token:
+                kw["ContinuationToken"] = token
+            r = c.list_objects_v2(**kw)
+            for o in r.get("Contents", []):
+                rest = o["Key"][len(prefix):]
+                if "/" not in rest:
+                    continue
+                fid, name = rest.split("/", 1)
+                e = slot(fid)
+                if name == "meta.json":
+                    try:
+                        m = _json.loads(get_file(o["Key"]))
+                        e["fileName"], e["ext"] = m.get("filename"), m.get("ext")
+                    except Exception:  # noqa: BLE001
+                        pass
+                elif name.startswith("raw"):
+                    e["size"] = o["Size"]
+                    e["uploadedAt"] = o["LastModified"].isoformat()
+            if r.get("IsTruncated"):
+                token = r.get("NextContinuationToken")
+            else:
+                break
+    else:
+        base = os.path.join(config.LOCAL_FILESTORE, config.S3_PREFIX)
+        if os.path.isdir(base):
+            for fid in os.listdir(base):
+                d = os.path.join(base, fid)
+                if not os.path.isdir(d):
+                    continue
+                e = slot(fid)
+                for fn in os.listdir(d):
+                    p = os.path.join(d, fn)
+                    if fn == "meta.json":
+                        try:
+                            m = _json.load(open(p, encoding="utf-8"))
+                            e["fileName"], e["ext"] = m.get("filename"), m.get("ext")
+                        except Exception:  # noqa: BLE001
+                            pass
+                    elif fn.startswith("raw"):
+                        e["size"] = os.path.getsize(p)
+                        e["uploadedAt"] = datetime.datetime.fromtimestamp(os.path.getmtime(p)).isoformat()
+
+    res = [v for v in out.values() if v.get("fileName")]
+    res.sort(key=lambda x: x.get("uploadedAt") or "", reverse=True)
+    return res

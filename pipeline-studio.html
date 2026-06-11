@@ -153,6 +153,8 @@ const api = {
   async confirm(confs){ const r=await fetch(state.backend.url+"/registry/confirm",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirmations:confs})}); return r.json(); },
   async runs(){ const r=await fetch(state.backend.url+"/runs",{cache:"no-store"}); return r.json(); },
   async automate(fileId, business_rules){ const r=await fetch(state.backend.url+"/automate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,business_rules})}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
+  async uploads(){ const r=await fetch(state.backend.url+"/uploads",{cache:"no-store"}); return r.json(); },
+  async schema(){ const r=await fetch(state.backend.url+"/schema",{cache:"no-store"}); return r.json(); },
 };
 async function checkHealth(){
   try{ const h=await api.health(); state.backend.healthy=true; state.backend.dagster=h.dagster;
@@ -219,6 +221,39 @@ function rUpload(m){
   dz.addEventListener("dragleave",()=>dz.classList.remove("hover"));
   dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("hover"); const fs=[...e.dataTransfer.files]; if(fs.length) multi?handleFiles(fs):handleFile(fs[0]);});
   m.appendChild(dz); m.appendChild(input);
+  if(multi){ const lib=el("div",{style:"margin-top:18px"}); m.appendChild(lib); loadLibrary(lib); }
+}
+function addExisting(fileId, fileName){
+  if(!state.files.some(f=>f.fileId===fileId)) state.files.push({fileId, fileName, existing:true});
+  state.automate=null; state.step=1; render();   // straight to Business rules — no re-upload
+}
+async function loadLibrary(host){
+  // --- previously uploaded files (reuse by fileId, no re-upload) ---
+  const up=el("div",{class:"pane"}); up.appendChild(el("div",{class:"pane-title"},"Previously uploaded files — reuse without re-uploading"));
+  const ub=el("div",{},el("div",{class:"empty-hint",style:"padding:12px"},"Loading…")); up.appendChild(ub); host.appendChild(up);
+  try{ const r=await api.uploads(); ub.innerHTML="";
+    if(!(r.uploads||[]).length) ub.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"No previous uploads yet."));
+    (r.uploads||[]).forEach(u=>{ const inBatch=state.files.some(f=>f.fileId===u.fileId);
+      ub.appendChild(el("div",{class:"sheet-card"},[
+        el("div",{class:"body"},[el("div",{class:"h"},[u.fileName||u.fileId]),
+          el("div",{class:"sub"},`${(u.size/1024).toFixed(1)} KB · ${esc(String(u.uploadedAt||"").replace("T"," ").slice(0,16))} · id ${esc(u.fileId)}`)]),
+        el("button",{class:"btn secondary",disabled:inBatch,onclick:()=>addExisting(u.fileId,u.fileName||u.fileId)}, inBatch?"✓ Added":"+ Add to batch")]));
+    });
+  }catch(e){ ub.innerHTML=""; ub.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"Could not load uploads: "+esc(e.message))); }
+  // --- warehouse tables already built (view / download, no re-run) ---
+  const wp=el("div",{class:"pane"}); wp.appendChild(el("div",{class:"pane-title"},"Warehouse tables — already built (download, no re-run)"));
+  const wbody=el("div",{},el("div",{class:"empty-hint",style:"padding:12px"},"Loading…")); wp.appendChild(wbody); host.appendChild(wp);
+  try{ const sc=await api.schema(); wbody.innerHTML="";
+    const names=Object.keys(sc.tables||{});
+    if(!names.length){ wbody.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"No tables built yet — automate a file to populate the warehouse.")); return; }
+    const t=el("table",{class:"data"}); t.appendChild(el("thead",{html:"<tr><th>Table</th><th>Columns</th><th>FKs</th><th>Download</th></tr>"}));
+    const tb=el("tbody");
+    names.forEach(n=>{ const info=sc.tables[n]||{}; const ex=el("td",{});
+      ex.appendChild(el("a",{href:state.backend.url+"/export/"+encodeURIComponent(n)+"?format=csv",target:"_blank",class:"btn ghost",style:"padding:2px 8px;margin-right:4px"},"CSV"));
+      ex.appendChild(el("a",{href:state.backend.url+"/export/"+encodeURIComponent(n)+"?format=json",target:"_blank",class:"btn ghost",style:"padding:2px 8px"},"JSON"));
+      tb.appendChild(el("tr",{},[el("td",{html:`<code>${esc(n)}</code>`}),el("td",{},String((info.columns||[]).length)),el("td",{},String((info.foreignKeys||[]).length)),ex])); });
+    t.appendChild(tb); wbody.appendChild(el("div",{class:"scroll-x"},t));
+  }catch(e){ wbody.innerHTML=""; wbody.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"Could not load tables: "+esc(e.message))); }
 }
 async function handleFile(file){
   state.fileName=file.name;
@@ -272,7 +307,9 @@ function rAutoRules(m){
   ]));
   state.files.forEach((f,i)=>fp.appendChild(el("div",{class:"sheet-card"},[
     el("div",{class:"body"},[el("div",{class:"h"},[`${i+1}. ${f.fileName} `,
-      el("span",{class:"badge info"},`${f.data} data`), f.meta?el("span",{class:"badge muted"},`${f.meta} meta`):null])]),
+      f.existing ? el("span",{class:"badge purple"},"reused (in S3)")
+                 : el("span",{class:"badge info"},`${f.data} data`),
+      (!f.existing && f.meta) ? el("span",{class:"badge muted"},`${f.meta} meta`) : null])]),
     el("button",{class:"btn ghost",style:"color:var(--bad)",onclick:()=>{state.files.splice(i,1); if(!state.files.length)state.step=0; render();}},"Remove")
   ])));
   if(!state.files.length) fp.appendChild(el("div",{class:"empty-hint"},"No files yet — add some."));
