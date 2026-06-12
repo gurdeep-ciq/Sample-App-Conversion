@@ -210,7 +210,8 @@ def automate(body: AutomateBody):
     run = codegen.build_and_run(schema, rows, meta["filename"], upload_id)
     after = DB.ai_introspect()
     before_names = {t["name"] for t in before["tables"]}
-    after_names = [t["name"] for t in after["tables"]]
+    after_names = [t["name"] for t in after["tables"]]           # display names (ai_ stripped)
+    export_names = ["ai_" + n for n in after_names]              # REAL tables holding the loaded data
     return {
         "fileName": wb.get("fileName"), "db": DB.db_label(),
         "schema": {k: v for k, v in schema.items() if not k.startswith("_")},
@@ -218,8 +219,8 @@ def automate(body: AutomateBody):
         "dbBefore": sorted(before_names),
         "dbAfter": [{"name": t["name"], "columns": len(t["columns"]), "fks": len(t["fks"]),
                      "new": t["name"] not in before_names} for t in after["tables"]],
-        "ddl": DB.export_ddl(after_names),   # replayable CREATE TABLE (with FKs) for export
-        "tables": after_names,               # exportable table names
+        "ddl": DB.export_ddl(export_names),  # replayable CREATE TABLE (with FKs) for export
+        "tables": export_names,              # export targets the populated ai_ tables, not the empty canonical ones
         "run": run,
     }
 

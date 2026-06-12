@@ -151,8 +151,9 @@ def infer_column(values: list) -> dict:
     null_rate = (total - len(vals)) / total if total else 1.0
     distinct = len({str(v) for v in vals})
     if not vals:
-        return dict(type="empty", nullRate=1.0, distinct=0, sample=[], allZero=False,
-                    leadingZero=False, bigIntNum=False, isCurrency=False, constant=True, numeric=False)
+        return dict(type="empty", nullRate=1.0, distinct=0, sample=[], distinctSample=[],
+                    min=None, max=None, allZero=False, leadingZero=False, bigIntNum=False,
+                    isCurrency=False, constant=True, numeric=False)
 
     def is_num(v):
         return isinstance(v, (int, float)) and not isinstance(v, bool) or (
@@ -204,8 +205,23 @@ def infer_column(values: list) -> dict:
     else:
         typ = "string"
 
+    # full-file value profile (over ALL rows, not a head sample): a diverse set of
+    # distinct example values + numeric range, so downstream analysis sees the whole column.
+    distinct_vals, seen = [], set()
+    for v in vals:
+        sv = str(v)
+        if sv not in seen:
+            seen.add(sv)
+            distinct_vals.append(_jsonable(v))
+            if len(distinct_vals) >= 30:
+                break
+    nums = [n for n in (_num(v) for v in vals) if n is not None] if (numeric or iscurr) else []
+    vmin, vmax = (min(nums), max(nums)) if nums else (None, None)
+
     return dict(type=typ, nullRate=round(null_rate, 4), distinct=distinct,
-                sample=[_jsonable(v) for v in vals[:5]], allZero=all_zero, leadingZero=leading_zero,
+                sample=[_jsonable(v) for v in vals[:5]],
+                distinctSample=distinct_vals, min=vmin, max=vmax,
+                allZero=all_zero, leadingZero=leading_zero,
                 bigIntNum=big_int_num, constant=constant, isCurrency=iscurr, numeric=numeric)
 
 
@@ -336,7 +352,7 @@ def generate_rules_and_schema(sheet: dict, profile: dict) -> dict:
     for c in cols:
         if c["type"] != "string":
             continue
-        probe = [c["sample"]] + [[r[c["index"]] if c["index"] < len(r) else None for r in data_rows[:300]]]
+        probe = [[r[c["index"]] if c["index"] < len(r) else None for r in data_rows]]  # scan ALL rows
         if any(v and INTERNAL_RE.search(str(v)) for grp in probe for v in grp):
             internal_col = c
             break

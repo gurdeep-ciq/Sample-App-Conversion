@@ -41,9 +41,17 @@ def _sheets_payload(profiled: dict) -> list[dict]:
         ent_by_src = {}
         for m in s.get("entityMatches", []):
             ent_by_src[m["source"]] = (m.get("entity") or {}).get("entity")
-        cols = [{"name": c["source"], "type": c["type"], "role": c["role"],
-                 "entity": ent_by_src.get(c["source"]), "sample": c.get("sample", [])[:3]}
-                for c in s["columns"]]
+        cols = []
+        for c in s["columns"]:
+            col = {"name": c["source"], "type": c["type"], "role": c["role"],
+                   "entity": ent_by_src.get(c["source"]),
+                   "nullPct": round(c.get("nullRate", 0) * 100, 1),
+                   "distinct": c.get("distinct"),
+                   # example values sampled across the ENTIRE column (not just the head)
+                   "examples": (c.get("distinctSample") or c.get("sample") or [])[:15]}
+            if c.get("min") is not None:
+                col["min"], col["max"] = c["min"], c["max"]
+            cols.append(col)
         out.append({"sheet": s["name"], "rows": s["rowCount"], "format": s.get("formatGuess"),
                     "columns": cols})
     return out
@@ -155,6 +163,11 @@ def propose_star_schema(profiled: dict, business_rules: str = "",
         "(role=fk, references='dim_x.x_key'); set every column's 'source' to its "
         "'sheet.column' when it comes from the data. Group compatible source sheets into "
         "shared facts/dims. Prefer FOUR-to-EIGHT total tables; do not over-normalize. "
+        "Each column carries statistics computed over the ENTIRE file — `distinct` (exact "
+        "distinct count across all rows), `nullPct`, numeric `min`/`max`, and `examples` "
+        "(distinct values sampled across the whole column). Use them to choose accurate "
+        "types and natural keys: low-distinct text is a dimension attribute or channel; "
+        "high-distinct + near-unique is a natural/business key; numeric ranges confirm measures. "
         "Every dimension's natural_key MUST list real business columns that each have a "
         "non-empty 'source' — NEVER put a surrogate/pk column in natural_key. For a date "
         "dimension, the natural_key is the actual date column (e.g. date_value sourced from "
