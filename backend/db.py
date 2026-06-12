@@ -250,6 +250,17 @@ def insert_fact_raw(row: dict):
         cx.execute(fact_sales.insert(), [row])
 
 
+def reset_warehouse() -> dict:
+    """Drop EVERY table (ai_*, stg_*, dims, facts) and recreate the empty canonical
+    star. Wipes all previously loaded data. reflect()+drop_all() honors FK order."""
+    names = inspect(ENGINE).get_table_names()
+    md = MetaData()
+    md.reflect(bind=ENGINE)
+    md.drop_all(bind=ENGINE)
+    ensure_star()  # recreate empty dim_*/fact_sales
+    return {"dropped": sorted(names)}
+
+
 # ---- export helpers ------------------------------------------------------
 def resolve_table(name: str) -> str | None:
     """Map a logical name to a real table: exact, or the ai_/stg_ namespaced form.

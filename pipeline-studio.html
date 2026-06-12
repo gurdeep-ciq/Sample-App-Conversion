@@ -155,6 +155,8 @@ const api = {
   async automate(fileId, business_rules){ const r=await fetch(state.backend.url+"/automate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,business_rules})}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async uploads(){ const r=await fetch(state.backend.url+"/uploads",{cache:"no-store"}); return r.json(); },
   async schema(){ const r=await fetch(state.backend.url+"/schema",{cache:"no-store"}); return r.json(); },
+  async deleteUpload(fileId){ const r=await fetch(state.backend.url+"/uploads/"+encodeURIComponent(fileId),{method:"DELETE"}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
+  async resetWarehouse(){ const r=await fetch(state.backend.url+"/warehouse",{method:"DELETE"}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
 };
 async function checkHealth(){
   try{ const h=await api.health(); state.backend.healthy=true; state.backend.dagster=h.dagster;
@@ -237,11 +239,16 @@ async function loadLibrary(host){
       ub.appendChild(el("div",{class:"sheet-card"},[
         el("div",{class:"body"},[el("div",{class:"h"},[u.fileName||u.fileId]),
           el("div",{class:"sub"},`${(u.size/1024).toFixed(1)} KB · ${esc(String(u.uploadedAt||"").replace("T"," ").slice(0,16))} · id ${esc(u.fileId)}`)]),
-        el("button",{class:"btn secondary",disabled:inBatch,onclick:()=>addExisting(u.fileId,u.fileName||u.fileId)}, inBatch?"✓ Added":"+ Add to batch")]));
+        el("div",{style:"display:flex;gap:6px;align-items:center"},[
+          el("button",{class:"btn secondary",disabled:inBatch,onclick:()=>addExisting(u.fileId,u.fileName||u.fileId)}, inBatch?"✓ Added":"+ Add to batch"),
+          el("button",{class:"btn ghost",style:"color:var(--bad)",title:"Delete this file from storage",onclick:()=>removeUpload(u.fileId,u.fileName||u.fileId)},"🗑 Remove")])]));
     });
   }catch(e){ ub.innerHTML=""; ub.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"Could not load uploads: "+esc(e.message))); }
   // --- warehouse tables already built (view / download, no re-run) ---
-  const wp=el("div",{class:"pane"}); wp.appendChild(el("div",{class:"pane-title"},"Warehouse tables — already built (download, no re-run)"));
+  const wp=el("div",{class:"pane"});
+  wp.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center"},[
+    el("div",{class:"pane-title",style:"margin:0"},"Warehouse tables — already built (download, no re-run)"),
+    el("button",{class:"btn ghost",style:"color:var(--bad)",title:"Drop ALL warehouse tables",onclick:clearWarehouse},"🗑 Clear all data")]));
   const wbody=el("div",{},el("div",{class:"empty-hint",style:"padding:12px"},"Loading…")); wp.appendChild(wbody); host.appendChild(wp);
   try{ const sc=await api.schema(); wbody.innerHTML="";
     const names=Object.keys(sc.tables||{});
@@ -254,6 +261,16 @@ async function loadLibrary(host){
       tb.appendChild(el("tr",{},[el("td",{html:`<code>${esc(n)}</code>`}),el("td",{},String((info.columns||[]).length)),el("td",{},String((info.foreignKeys||[]).length)),ex])); });
     t.appendChild(tb); wbody.appendChild(el("div",{class:"scroll-x"},t));
   }catch(e){ wbody.innerHTML=""; wbody.appendChild(el("div",{class:"empty-hint",style:"padding:12px"},"Could not load tables: "+esc(e.message))); }
+}
+async function removeUpload(fileId, fileName){
+  if(!confirm(`Delete "${fileName}" from storage? This removes the uploaded file (its loaded tables stay until you clear the warehouse).`)) return;
+  try{ await api.deleteUpload(fileId); state.files=state.files.filter(f=>f.fileId!==fileId); render(); }
+  catch(e){ alert("Could not delete file: "+e.message+(/denied|forbidden|403/i.test(e.message)?"\n\nYour S3 IAM key needs the s3:DeleteObject permission.":"")); }
+}
+async function clearWarehouse(){
+  if(!confirm("Drop ALL warehouse tables and wipe every previously loaded database? This cannot be undone.")) return;
+  try{ const r=await api.resetWarehouse(); alert(`Cleared the warehouse — dropped ${ (r.dropped||[]).length } table(s).`); render(); }
+  catch(e){ alert("Could not clear warehouse: "+e.message); }
 }
 async function handleFile(file){
   state.fileName=file.name;

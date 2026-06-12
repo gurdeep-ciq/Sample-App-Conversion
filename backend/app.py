@@ -236,6 +236,22 @@ def uploads():
     return {"uploads": storage.list_uploads()}
 
 
+@app.delete("/uploads/{file_id}")
+def delete_upload(file_id: str):
+    """Remove a previously-uploaded file from storage (S3 needs s3:DeleteObject)."""
+    try:
+        n = storage.delete_upload(file_id)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Could not delete from storage: {e}")
+    return {"deleted": file_id, "objects": n}
+
+
+@app.delete("/warehouse")
+def reset_warehouse():
+    """Drop ALL warehouse tables (every previously loaded database) and reset to empty."""
+    return DB.reset_warehouse()
+
+
 @app.get("/runs")
 def runs():
     return {"runs": run_history()}

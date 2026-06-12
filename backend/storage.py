@@ -73,6 +73,32 @@ def url(key: str) -> str:
     return "file://" + _local_path(key)
 
 
+def delete_upload(file_id: str) -> int:
+    """Delete every object for one upload (raw + meta). Returns the count removed.
+    NOTE: on S3 this needs s3:DeleteObject permission on the bucket."""
+    prefix = config.S3_PREFIX.rstrip("/") + "/" + file_id + "/"
+    if config.storage_backend() == "s3":
+        c = _client()
+        objs = c.list_objects_v2(Bucket=config.S3_BUCKET, Prefix=prefix).get("Contents", [])
+        if not objs:
+            return 0
+        resp = c.delete_objects(Bucket=config.S3_BUCKET,
+                                Delete={"Objects": [{"Key": o["Key"]} for o in objs], "Quiet": False})
+        errors = resp.get("Errors", [])
+        if errors:  # S3 returns 200 even when each key is denied — surface it
+            e0 = errors[0]
+            raise PermissionError(f"{e0.get('Code')}: {e0.get('Message')} "
+                                  "(the S3 IAM key needs s3:DeleteObject)")
+        return len(resp.get("Deleted", []))
+    import shutil
+    d = os.path.join(config.LOCAL_FILESTORE, config.S3_PREFIX, file_id)
+    if os.path.isdir(d):
+        n = len(os.listdir(d))
+        shutil.rmtree(d, ignore_errors=True)
+        return n
+    return 0
+
+
 def list_uploads() -> list[dict]:
     """Every previously-uploaded file (so the UI can reuse one without re-uploading).
     Returns [{fileId, fileName, ext, size, uploadedAt}] newest first."""
