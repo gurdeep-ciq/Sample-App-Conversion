@@ -33,7 +33,8 @@ _SEED = [
     {"name": "product_code", "role": "id", "type": "string", "expect": "id",
      "aliases": ["sku", "upc", "ean", "gtin", "barcode", "product code", "item code", "supplier's sku", "code", "product key"]},
     {"name": "quantity", "role": "measure", "type": "decimal", "expect": "number",
-     "aliases": ["qty", "quantity", "units", "cases", "sold", "number of sales", "qty sold"]},
+     "aliases": ["qty", "quantity", "units", "cases", "sold", "number of sales", "qty sold",
+                 "qty ordered", "quantity ordered", "cases ordered", "ordered", "units ordered"]},
     {"name": "unit_price", "role": "measure", "type": "decimal", "expect": "number",
      "aliases": ["price", "unit price", "fob", "msrp", "unit msrp", "cost", "default selling price"]},
     {"name": "amount", "role": "measure", "type": "decimal", "expect": "number",
@@ -220,7 +221,7 @@ def _entity_to_source(profile: dict, registry: list[dict]) -> dict:
 
 
 def union_merge_rows(profiled: dict, registry: list[dict], rows_by_sheet: dict,
-                     schema: dict, threshold: float = 0.6) -> tuple[dict, list[dict]]:
+                     schema: dict, threshold: float = 0.8) -> tuple[dict, list[dict]]:
     """Fold same-schema sibling tabs into each fact's referenced sheet.
 
     Real workbooks repeat one schema across many tabs (e.g. monthly "Sales of <Month>"
@@ -234,6 +235,8 @@ def union_merge_rows(profiled: dict, registry: list[dict], rows_by_sheet: dict,
     groups = union_groups(profiled["sheets"], registry, threshold=threshold)
     ent_src = {s["name"]: _entity_to_source(s["_profile"], registry)
                for s in profiled["sheets"] if s["kind"] == "data" and s.get("_profile")}
+    profiles = {s["name"]: s["_profile"] for s in profiled["sheets"]
+                if s["kind"] == "data" and s.get("_profile")}
     referenced = []
     for f in schema.get("facts", []):
         for c in f["columns"]:
@@ -249,21 +252,35 @@ def union_merge_rows(profiled: dict, registry: list[dict], rows_by_sheet: dict,
         if len(members) < 2:
             continue
         target = next((m for m in referenced if m in members), None)
-        if not target:
+        if not target or target not in profiles:
             continue  # the LLM didn't build a fact from this group
-        tmap = ent_src.get(target, {})
+        # the target's columns are what the fact references; build, for each, how to
+        # find the matching value in a sibling row: by identical header, identical snaked
+        # name, or (fallback) the sibling's column for the same canonical entity.
+        t_src2ent = {m["source"]: (m["entity"] or {}).get("entity")
+                     for m in match_profile(profiles[target], registry)}
+        target_cols = [c["source"] for c in profiles[target]["columns"]]
         added, folded = 0, []
         for M in members:
             if M == target:
                 continue
-            mmap = ent_src.get(M, {})
+            mmap = ent_src.get(M, {})  # entity -> sibling header
             for row in rows_by_sheet.get(M, []):
                 aligned = {}
-                for ent, t_hdr in tmap.items():
-                    m_hdr = mmap.get(ent)
-                    if m_hdr is not None and m_hdr in row:
-                        aligned[t_hdr] = row[m_hdr]
-                        aligned[snake(t_hdr)] = row[m_hdr]
+                for t_hdr in target_cols:
+                    val = None
+                    if t_hdr in row:                       # identical header text
+                        val = row[t_hdr]
+                    elif snake(t_hdr) in row:              # identical snaked name
+                        val = row[snake(t_hdr)]
+                    else:                                  # fall back to canonical entity
+                        ent = t_src2ent.get(t_hdr)
+                        m_hdr = mmap.get(ent) if ent else None
+                        if m_hdr is not None and m_hdr in row:
+                            val = row[m_hdr]
+                    if val is not None:
+                        aligned[t_hdr] = val
+                        aligned[snake(t_hdr)] = val
                 if aligned:
                     rows_by_sheet[target].append(aligned)
                     added += 1
