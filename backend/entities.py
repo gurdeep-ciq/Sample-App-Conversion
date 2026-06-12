@@ -209,6 +209,72 @@ def union_groups(sheets: list[dict], registry: list[dict], threshold: float = 0.
     return out
 
 
+def _entity_to_source(profile: dict, registry: list[dict]) -> dict:
+    """{canonical_entity -> source header} for one sheet (first/best match per entity)."""
+    mp: dict[str, str] = {}
+    for m in match_profile(profile, registry):
+        ent = (m.get("entity") or {}).get("entity")
+        if ent and ent not in mp:
+            mp[ent] = m["source"]
+    return mp
+
+
+def union_merge_rows(profiled: dict, registry: list[dict], rows_by_sheet: dict,
+                     schema: dict, threshold: float = 0.6) -> tuple[dict, list[dict]]:
+    """Fold same-schema sibling tabs into each fact's referenced sheet.
+
+    Real workbooks repeat one schema across many tabs (e.g. monthly "Sales of <Month>"
+    sheets). The LLM typically models just one of them, so the loader would ingest a
+    single month. Here we detect compatible sibling sheets (canonical-entity overlap)
+    and append their rows — aligned by canonical entity, so differing headers
+    ("Qty Ordered" vs "QTY Ordered", "Customer Name" vs "column_1") line up — into the
+    one sheet the fact points at. Folded siblings are emptied so they aren't loaded twice.
+    """
+    from profiling import snake
+    groups = union_groups(profiled["sheets"], registry, threshold=threshold)
+    ent_src = {s["name"]: _entity_to_source(s["_profile"], registry)
+               for s in profiled["sheets"] if s["kind"] == "data" and s.get("_profile")}
+    referenced = []
+    for f in schema.get("facts", []):
+        for c in f["columns"]:
+            src = c.get("source") or ""
+            if "." in src:
+                sh = src.split(".", 1)[0]
+                if sh not in referenced:
+                    referenced.append(sh)
+
+    info = []
+    for g in groups:
+        members = [m for m in g["members"] if m in rows_by_sheet]
+        if len(members) < 2:
+            continue
+        target = next((m for m in referenced if m in members), None)
+        if not target:
+            continue  # the LLM didn't build a fact from this group
+        tmap = ent_src.get(target, {})
+        added, folded = 0, []
+        for M in members:
+            if M == target:
+                continue
+            mmap = ent_src.get(M, {})
+            for row in rows_by_sheet.get(M, []):
+                aligned = {}
+                for ent, t_hdr in tmap.items():
+                    m_hdr = mmap.get(ent)
+                    if m_hdr is not None and m_hdr in row:
+                        aligned[t_hdr] = row[m_hdr]
+                        aligned[snake(t_hdr)] = row[m_hdr]
+                if aligned:
+                    rows_by_sheet[target].append(aligned)
+                    added += 1
+            if rows_by_sheet.get(M):
+                folded.append(M)
+            rows_by_sheet[M] = []  # consumed into target — avoid double-loading
+        if added:
+            info.append({"unionedInto": target, "foldedTabs": folded, "rowsAdded": added})
+    return rows_by_sheet, info
+
+
 def confirm_mappings(confirmations: list[dict]) -> list[dict]:
     """Persist confirmed source->entity mappings as learned aliases.
     `confirmations` = [{"source": "CustName", "entity": "customer"}, ...].

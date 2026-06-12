@@ -206,6 +206,9 @@ def automate(body: AutomateBody):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM schema proposal failed: {e}")
     rows = DB.cleaned_rows_by_sheet(wb)
+    # Fold same-schema sibling tabs (e.g. monthly "Sales of <Month>") into each fact's
+    # sheet so ALL such tabs are ingested, not just the one the LLM happened to model.
+    rows, union_info = E.union_merge_rows(wb, registry, rows, schema)
     upload_id = P.snake(meta["filename"]) + "_" + body.fileId
     run = codegen.build_and_run(schema, rows, meta["filename"], upload_id)
     after = DB.ai_introspect()
@@ -221,6 +224,7 @@ def automate(body: AutomateBody):
                      "new": t["name"] not in before_names} for t in after["tables"]],
         "ddl": DB.export_ddl(export_names),  # replayable CREATE TABLE (with FKs) for export
         "tables": export_names,              # export targets the populated ai_ tables, not the empty canonical ones
+        "unionMerge": union_info,            # sibling tabs folded into each fact (multi-tab files)
         "run": run,
     }
 
