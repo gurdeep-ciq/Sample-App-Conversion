@@ -179,6 +179,7 @@ def ingest(body: IngestBody):
 class AutomateBody(BaseModel):
     fileId: str
     business_rules: str = ""
+    clean_rows: bool = False   # default: load ALL rows; True also applies heuristic row filters
 
 
 @app.post("/automate")
@@ -205,7 +206,7 @@ def automate(body: AutomateBody):
         schema = llm.propose_star_schema(wb, body.business_rules, existing_db_schema=before)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM schema proposal failed: {e}")
-    rows = DB.cleaned_rows_by_sheet(wb)
+    rows = DB.cleaned_rows_by_sheet(wb, apply_filters=body.clean_rows)
     # Fold same-schema sibling tabs (e.g. monthly "Sales of <Month>") into each fact's
     # sheet so ALL such tabs are ingested, not just the one the LLM happened to model.
     rows, union_info = E.union_merge_rows(wb, registry, rows, schema)

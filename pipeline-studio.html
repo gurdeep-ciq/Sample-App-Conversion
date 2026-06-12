@@ -136,7 +136,7 @@ const state = {
   fileName:null, fileId:null, sheets:[], unionGroups:[], registry:[],
   overrides:{}, rulesBySheet:{}, groupsEnabled:{}, ingest:null, offline:null,
   rules:"", automate:null,            // autopilot: business-rules text + /automate result
-  files:[], automateResults:[],       // autopilot multi-file: [{fileId,fileName,data,meta}], per-file results
+  files:[], automateResults:[], cleanRows:false,
 };
 const activeSteps = () => state.auto ? AUTO_STEPS : STEPS;
 
@@ -152,7 +152,7 @@ const api = {
   async ingest(plan){ const r=await fetch(state.backend.url+"/ingest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(plan)}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async confirm(confs){ const r=await fetch(state.backend.url+"/registry/confirm",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirmations:confs})}); return r.json(); },
   async runs(){ const r=await fetch(state.backend.url+"/runs",{cache:"no-store"}); return r.json(); },
-  async automate(fileId, business_rules){ const r=await fetch(state.backend.url+"/automate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,business_rules})}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
+  async automate(fileId, business_rules, clean_rows){ const r=await fetch(state.backend.url+"/automate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,business_rules,clean_rows:!!clean_rows})}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
   async uploads(){ const r=await fetch(state.backend.url+"/uploads",{cache:"no-store"}); return r.json(); },
   async schema(){ const r=await fetch(state.backend.url+"/schema",{cache:"no-store"}); return r.json(); },
   async deleteUpload(fileId){ const r=await fetch(state.backend.url+"/uploads/"+encodeURIComponent(fileId),{method:"DELETE"}); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||r.statusText); return r.json(); },
@@ -341,6 +341,13 @@ function rAutoRules(m){
   ["Exclude employee/sample rows.","Channel = On/Off Premise.","Drop out-of-territory rows.","Returns are negative quantities."].forEach(ex=>
     chips.appendChild(el("span",{class:"chip",style:"cursor:pointer",onclick:()=>{state.rules=(state.rules?state.rules+" ":"")+ex; ta.value=state.rules;}},"+ "+ex)));
   pane.appendChild(chips);
+  // row-cleanup toggle (default OFF -> every source row loads; exports match the file)
+  const cw=el("label",{style:"display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;color:var(--ink-soft);cursor:pointer"});
+  const cb=el("input",{type:"checkbox"}); if(state.cleanRows)cb.setAttribute("checked","checked");
+  cb.addEventListener("change",e=>state.cleanRows=e.target.checked);
+  cw.appendChild(cb);
+  cw.appendChild(el("span",{html:"Apply suggested row cleanup (drop blank-key / internal / zero rows). <b>Off by default</b> — all rows load so exports match the file."}));
+  pane.appendChild(cw);
   m.appendChild(pane);
   m.appendChild(el("div",{class:"row-between"},[
     el("button",{class:"btn ghost",onclick:()=>{state.step=0;render();}},"← Back"),
@@ -357,7 +364,7 @@ async function runAutomate(){
     const f=state.files[i];
     status.querySelector("div:last-child").textContent=
       `AI automating ${i+1}/${state.files.length}: ${f.fileName} — schema → pipeline → FK-safe load…`;
-    try{ const res=await api.automate(f.fileId, state.rules); res._fileName=f.fileName; state.automateResults.push(res); }
+    try{ const res=await api.automate(f.fileId, state.rules, state.cleanRows); res._fileName=f.fileName; state.automateResults.push(res); }
     catch(e){ state.automateResults.push({_fileName:f.fileName, _error:e.message}); }
   }
   state.step=2; render();
@@ -726,7 +733,7 @@ function icon(kind){
   return el("span",{html:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">${p[kind]}</svg>`}).firstChild;
 }
 
-$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null,rules:"",automate:null,files:[],automateResults:[]});render();});
+$("#reset-btn").addEventListener("click",()=>{Object.assign(state,{step:0,fileName:null,fileId:null,sheets:[],unionGroups:[],overrides:{},rulesBySheet:{},groupsEnabled:{},ingest:null,offline:null,rules:"",automate:null,files:[],automateResults:[],cleanRows:false});render();});
 $("#status").addEventListener("click",async()=>{const u=prompt("Backend URL:",state.backend.url);if(u){state.backend.url=u.trim().replace(/\/$/,"");localStorage.setItem(LS_URL,state.backend.url);await checkHealth();render();}});
 (async()=>{ await checkHealth(); render(); })();
 </script>

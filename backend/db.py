@@ -517,14 +517,22 @@ def fk_orphans() -> int:
     return total
 
 
-def cleaned_rows_by_sheet(profiled: dict) -> dict:
-    """{sheet_name: [ {original_header: cleaned_value, canonical_name: value} ]}"""
+def cleaned_rows_by_sheet(profiled: dict, apply_filters: bool = False) -> dict:
+    """{sheet_name: [ {original_header: cleaned_value, canonical_name: value} ]}
+
+    By default NO rows are dropped — every source row loads (column casts/transforms
+    still apply). Set apply_filters=True to also run the heuristic row filters
+    (drop blank/internal/zero rows); off by default so exports match the source count."""
     out = {}
     for s in profiled["sheets"]:
         if s["kind"] != "data" or not s.get("_profile"):
             continue
         schema_cols = s["schema"]["columns"]
-        res = apply_pipeline(s["_profile"], s.get("rules", []), schema_cols)
+        rules = s.get("rules", [])
+        if not apply_filters:  # keep column ops (cast/combine/derive/drop_column); skip row droppers
+            rules = [{**r, "enabled": r.get("enabled") and r.get("kind") not in ("filter", "dedupe")}
+                     for r in rules]
+        res = apply_pipeline(s["_profile"], rules, schema_cols)
         name2src = {c["name"]: c.get("source", "") for c in schema_cols if c.get("include")}
         rows = []
         for r in res["rows"]:
